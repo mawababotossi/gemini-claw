@@ -58,7 +58,7 @@ if [ -d "$INSTALL_DIR" ]; then
 fi
 
 echo -e "\n${BOLD}🚀 Cloning GeminiClaw repository...${RESET}"
-git clone https://github.com/crucialdigital/gemini-claw.git "$INSTALL_DIR"
+git clone https://github.com/mawababotossi/gemini-claw.git "$INSTALL_DIR"
 cd "$INSTALL_DIR"
 
 echo -e "\n${BOLD}📦 Installing dependencies...${RESET}"
