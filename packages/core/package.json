@@ -1,0 +1,25 @@
+{
+    "name": "@geminiclaw/core",
+    "version": "0.1.0",
+    "description": "Headless AI runtime — wrapper around @google/gemini-cli-core",
+    "type": "module",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "scripts": {
+        "build": "tsc",
+        "dev": "tsc --watch",
+        "clean": "rm -rf dist",
+        "test": "vitest run"
+    },
+    "dependencies": {
+        "@geminiclaw/memory": "workspace:*",
+        "@geminiclaw/skills": "workspace:^",
+        "@google/gemini-cli-core": "latest",
+        "zod": "^3.23.8"
+    },
+    "devDependencies": {
+        "@types/node": "^22.0.0",
+        "typescript": "^5.5.0",
+        "vitest": "^2.0.0"
+    }
+}

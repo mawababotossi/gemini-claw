@@ -1,0 +1,37 @@
+{
+    "name": "@geminiclaw/gateway",
+    "version": "0.1.0",
+    "description": "Hub-and-spoke gateway — WebSocket routing, sessions, queue, cron, webhooks",
+    "type": "module",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "scripts": {
+        "build": "tsc",
+        "dev": "CONFIG_PATH=../../config/geminiclaw.json tsx watch --env-file ../../.env src/server.ts",
+        "start": "node dist/index.js",
+        "clean": "rm -rf dist",
+        "test": "vitest run"
+    },
+    "dependencies": {
+        "@geminiclaw/core": "workspace:*",
+        "@geminiclaw/memory": "workspace:*",
+        "@geminiclaw/skills": "workspace:*",
+        "@geminiclaw/channel-webchat": "workspace:*",
+        "@geminiclaw/channel-telegram": "workspace:*",
+        "@geminiclaw/channel-whatsapp": "workspace:*",
+        "dotenv": "^16.4.0",
+        "express": "^4.19.0",
+        "node-cron": "^3.0.3",
+        "ws": "^8.18.0",
+        "zod": "^3.23.8"
+    },
+    "devDependencies": {
+        "@types/cors": "^2.8.19",
+        "@types/express": "^4.17.21",
+        "@types/node": "^22.0.0",
+        "@types/node-cron": "^3.0.11",
+        "@types/ws": "^8.5.12",
+        "typescript": "^5.5.0",
+        "vitest": "^2.0.0"
+    }
+}

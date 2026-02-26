@@ -1,0 +1,24 @@
+{
+    "name": "@geminiclaw/channel-webchat",
+    "version": "0.1.0",
+    "description": "WebChat channel adapter — WebSocket + HTML UI",
+    "type": "module",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "scripts": {
+        "build": "tsc",
+        "clean": "rm -rf dist",
+        "test": "vitest run"
+    },
+    "dependencies": {
+        "@geminiclaw/gateway": "workspace:*",
+        "@geminiclaw/memory": "workspace:*",
+        "ws": "^8.18.0"
+    },
+    "devDependencies": {
+        "@types/node": "^22.0.0",
+        "@types/ws": "^8.5.12",
+        "typescript": "^5.5.0",
+        "vitest": "^2.0.0"
+    }
+}

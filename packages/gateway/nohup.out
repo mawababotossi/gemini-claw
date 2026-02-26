@@ -1,0 +1,119 @@
+
+node:internal/modules/run_main:122
+    triggerUncaughtException(
+    ^
+Error: Cannot find package '/media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/gemini-claw/packages/gateway/node_modules/@geminiclaw/memory/dist/index.js' imported from /media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/gemini-claw/packages/gateway/src/Gateway.ts
+    at legacyMainResolve (node:internal/modules/esm/resolve:204:26)
+    at packageResolve (node:internal/modules/esm/resolve:778:12)
+    at moduleResolve (node:internal/modules/esm/resolve:854:18)
+    at defaultResolve (node:internal/modules/esm/resolve:984:11)
+    at nextResolve (node:internal/modules/esm/hooks:748:28)
+    at resolveBase (file:///media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/gemini-claw/node_modules/.pnpm/tsx@4.21.0/node_modules/tsx/dist/esm/index.mjs?1772117819773:2:3744)
+    at resolveDirectory (file:///media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/gemini-claw/node_modules/.pnpm/tsx@4.21.0/node_modules/tsx/dist/esm/index.mjs?1772117819773:2:4243)
+    at resolveTsPaths (file:///media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/gemini-claw/node_modules/.pnpm/tsx@4.21.0/node_modules/tsx/dist/esm/index.mjs?1772117819773:2:4984)
+    at resolve (file:///media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/gemini-claw/node_modules/.pnpm/tsx@4.21.0/node_modules/tsx/dist/esm/index.mjs?1772117819773:2:5361)
+    at nextResolve (node:internal/modules/esm/hooks:748:28) {
+  code: 'ERR_MODULE_NOT_FOUND'
+}
+
+Node.js v22.14.0
+
+node:internal/modules/run_main:122
+    triggerUncaughtException(
+    ^
+Error: Cannot find package '/media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/gemini-claw/packages/gateway/node_modules/@geminiclaw/memory/dist/index.js' imported from /media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/gemini-claw/packages/gateway/src/Gateway.ts
+    at legacyMainResolve (node:internal/modules/esm/resolve:204:26)
+    at packageResolve (node:internal/modules/esm/resolve:778:12)
+    at moduleResolve (node:internal/modules/esm/resolve:854:18)
+    at defaultResolve (node:internal/modules/esm/resolve:984:11)
+    at nextResolve (node:internal/modules/esm/hooks:748:28)
+    at resolveBase (file:///media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/gemini-claw/node_modules/.pnpm/tsx@4.21.0/node_modules/tsx/dist/esm/index.mjs?1772118161611:2:3744)
+    at resolveDirectory (file:///media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/gemini-claw/node_modules/.pnpm/tsx@4.21.0/node_modules/tsx/dist/esm/index.mjs?1772118161611:2:4243)
+    at resolveTsPaths (file:///media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/gemini-claw/node_modules/.pnpm/tsx@4.21.0/node_modules/tsx/dist/esm/index.mjs?1772118161611:2:4984)
+    at resolve (file:///media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/gemini-claw/node_modules/.pnpm/tsx@4.21.0/node_modules/tsx/dist/esm/index.mjs?1772118161611:2:5361)
+    at nextResolve (node:internal/modules/esm/hooks:748:28) {
+  code: 'ERR_MODULE_NOT_FOUND'
+}
+
+Node.js v22.14.0
+
+node:internal/modules/run_main:122
+    triggerUncaughtException(
+    ^
+Error: Cannot find package '/media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/gemini-claw/packages/gateway/node_modules/@geminiclaw/memory/dist/index.js' imported from /media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/gemini-claw/packages/gateway/src/Gateway.ts
+    at legacyMainResolve (node:internal/modules/esm/resolve:204:26)
+    at packageResolve (node:internal/modules/esm/resolve:778:12)
+    at moduleResolve (node:internal/modules/esm/resolve:854:18)
+    at defaultResolve (node:internal/modules/esm/resolve:984:11)
+    at nextResolve (node:internal/modules/esm/hooks:748:28)
+    at resolveBase (file:///media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/gemini-claw/node_modules/.pnpm/tsx@4.21.0/node_modules/tsx/dist/esm/index.mjs?1772118438864:2:3744)
+    at resolveDirectory (file:///media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/gemini-claw/node_modules/.pnpm/tsx@4.21.0/node_modules/tsx/dist/esm/index.mjs?1772118438864:2:4243)
+    at resolveTsPaths (file:///media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/gemini-claw/node_modules/.pnpm/tsx@4.21.0/node_modules/tsx/dist/esm/index.mjs?1772118438864:2:4984)
+    at resolve (file:///media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/gemini-claw/node_modules/.pnpm/tsx@4.21.0/node_modules/tsx/dist/esm/index.mjs?1772118438864:2:5361)
+    at nextResolve (node:internal/modules/esm/hooks:748:28) {
+  code: 'ERR_MODULE_NOT_FOUND'
+}
+
+Node.js v22.14.0
+
+> @geminiclaw/gateway@0.1.0 dev /media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/gemini-claw/packages/gateway
+> CONFIG_PATH=../../config/agents.json tsx watch --env-file ../../.env src/server.ts "u003e" "gateway.log" "2u003eu00261" "u0026"
+
+node:events:496
+      throw er; // Unhandled 'error' event
+      ^
+
+Error: EBADF: bad file descriptor, read
+Emitted 'error' event on ReadStream instance at:
+    at emitErrorNT (node:internal/streams/destroy:170:8)
+    at errorOrDestroy (node:internal/streams/destroy:239:7)
+    at node:internal/fs/streams:272:9
+    at FSReqCallback.wrapper [as oncomplete] (node:fs:672:5) {
+  errno: -9,
+  code: 'EBADF',
+  syscall: 'read'
+}
+
+Node.js v22.14.0
+ ELIFECYCLE  Command failed with exit code 1.
+
+node:internal/modules/run_main:122
+    triggerUncaughtException(
+    ^
+Error: Cannot find package '/media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/gemini-claw/packages/gateway/node_modules/@geminiclaw/memory/dist/index.js' imported from /media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/gemini-claw/packages/gateway/src/Gateway.ts
+    at legacyMainResolve (node:internal/modules/esm/resolve:204:26)
+    at packageResolve (node:internal/modules/esm/resolve:778:12)
+    at moduleResolve (node:internal/modules/esm/resolve:854:18)
+    at defaultResolve (node:internal/modules/esm/resolve:984:11)
+    at nextResolve (node:internal/modules/esm/hooks:748:28)
+    at resolveBase (file:///media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/gemini-claw/node_modules/.pnpm/tsx@4.21.0/node_modules/tsx/dist/esm/index.mjs?1772118674274:2:3744)
+    at resolveDirectory (file:///media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/gemini-claw/node_modules/.pnpm/tsx@4.21.0/node_modules/tsx/dist/esm/index.mjs?1772118674274:2:4243)
+    at resolveTsPaths (file:///media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/gemini-claw/node_modules/.pnpm/tsx@4.21.0/node_modules/tsx/dist/esm/index.mjs?1772118674274:2:4984)
+    at resolve (file:///media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/gemini-claw/node_modules/.pnpm/tsx@4.21.0/node_modules/tsx/dist/esm/index.mjs?1772118674274:2:5361)
+    at nextResolve (node:internal/modules/esm/hooks:748:28) {
+  code: 'ERR_MODULE_NOT_FOUND'
+}
+
+Node.js v22.14.0
+[geminiclaw] Starting...
+[gateway] Registered builtin skill: getCurrentTime
+[geminiclaw] Fatal error: Error: Cannot find package '/media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/gemini-claw/node_modules/@geminiclaw/channel-webchat/dist/index.js' imported from /media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/gemini-claw/packages/gateway/src/server.ts
+    at legacyMainResolve (node:internal/modules/esm/resolve:204:26)
+    at packageResolve (node:internal/modules/esm/resolve:778:12)
+    at moduleResolve (node:internal/modules/esm/resolve:854:18)
+    at defaultResolve (node:internal/modules/esm/resolve:984:11)
+    at nextResolve (node:internal/modules/esm/hooks:748:28)
+    at resolveBase (file:///media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/gemini-claw/node_modules/.pnpm/tsx@4.21.0/node_modules/tsx/dist/esm/index.mjs?1772118748446:2:3744)
+    at resolveDirectory (file:///media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/gemini-claw/node_modules/.pnpm/tsx@4.21.0/node_modules/tsx/dist/esm/index.mjs?1772118748446:2:4243)
+    at resolveTsPaths (file:///media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/gemini-claw/node_modules/.pnpm/tsx@4.21.0/node_modules/tsx/dist/esm/index.mjs?1772118748446:2:4984)
+    at resolve (file:///media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/gemini-claw/node_modules/.pnpm/tsx@4.21.0/node_modules/tsx/dist/esm/index.mjs?1772118748446:2:5361)
+    at nextResolve (node:internal/modules/esm/hooks:748:28) {
+  code: 'ERR_MODULE_NOT_FOUND'
+}
+[geminiclaw] Starting...
+[gateway] Registered builtin skill: getCurrentTime
+[gateway] Channel registered: webchat
+[geminiclaw] WebChat ready on port 3001
+[webchat] Listening on http://localhost:3001
+[geminiclaw] 🚀 Ready. Ctrl+C to stop.
+[geminiclaw] Admin API ready on port 3002

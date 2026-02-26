@@ -1,0 +1,73 @@
+.logs-page {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.logs-terminal {
+    flex: 1;
+    overflow-y: auto;
+    background-color: var(--color-surface) !important;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    font-family: 'Fira Code', 'Courier New', Courier, monospace;
+    font-size: 0.9rem;
+    padding: var(--spacing-md);
+    position: relative;
+    max-height: calc(100vh - 150px);
+}
+
+.logs-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.log-line {
+    display: flex;
+    gap: 1rem;
+    line-height: 1.4;
+    word-break: break-all;
+}
+
+.log-time {
+    color: var(--color-neutral-400);
+    min-width: 80px;
+    flex-shrink: 0;
+}
+
+.log-level {
+    font-weight: 600;
+    min-width: 60px;
+    flex-shrink: 0;
+}
+
+.log-text {
+    color: var(--color-neutral-200);
+    white-space: pre-wrap;
+}
+
+/* Levels */
+.level-log .log-level,
+.level-info .log-level {
+    color: var(--color-primary-400);
+}
+
+.level-warn .log-level {
+    color: var(--color-warning);
+}
+
+.level-error .log-level {
+    color: var(--color-error);
+}
+
+.level-error .log-text {
+    color: var(--color-error);
+}
+
+.inline-icon {
+    display: inline-block;
+    vertical-align: middle;
+    margin-right: var(--spacing-sm);
+    color: var(--color-primary-400);
+}

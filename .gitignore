@@ -1,0 +1,12 @@
+node_modules/
+dist/
+*.js.map
+*.d.ts.map
+.env
+data/
+*.db
+.DS_Store
+*.log
+
+# WhatsApp session files
+packages/channels/whatsapp/auth_info_baileys/

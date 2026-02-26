@@ -1,0 +1,26 @@
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: ./packages/gateway/Dockerfile
+    ports:
+      - "3001:3001"
+      - "3002:3002"
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - OPENCLAW_API_BASE=${OPENCLAW_API_BASE}
+      - CONFIG_PATH=/app/config/agents.json
+    volumes:
+      - ./config:/app/config
+      - ./data:/app/data
+    restart: always
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: ./packages/dashboard/Dockerfile
+    ports:
+      - "5173:5173"
+    restart: always
+    depends_on:
+      - gateway

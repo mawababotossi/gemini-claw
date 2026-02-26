@@ -1,0 +1,59 @@
+{
+    "project": {
+        "name": "GeminiClaw",
+        "description": "Superviseur d'agents IA via ACP",
+        "defaultModel": "gemini-2.0-flash"
+    },
+    "providers": [
+        {
+            "name": "google",
+            "type": "google",
+            "apiKey": "${GEMINI_API_KEY}",
+            "models": [
+                "gemini-3-1-pro-preview",
+                "gemini-3-flash-preview",
+                "gemini-2.0-flash",
+                "gemini-1.5-pro",
+                "gemini-1.5-flash"
+            ]
+        },
+        {
+            "name": "openclaw",
+            "type": "custom",
+            "baseUrl": "${OPENCLAW_API_BASE}",
+            "models": [
+                "together/moonshotai/Kimi-K2.5"
+            ]
+        }
+    ],
+    "agents": [
+        {
+            "name": "main",
+            "model": "gemini-3-flash-preview",
+            "modelCallback": "gemini-2.0-flash",
+            "fallbackModels": [
+                "gemini-1.5-pro"
+            ],
+            "heartbeat": {
+                "enabled": true,
+                "intervalMinutes": 60
+            },
+            "mcpServers": [
+                {
+                    "name": "geminiclaw-skills",
+                    "type": "sse",
+                    "url": "http://localhost:3002/api/mcp/messages",
+                    "headers": []
+                }
+            ],
+            "baseDir": "../../data/agents/main"
+        }
+    ],
+    "channels": {
+        "webchat": {
+            "enabled": true,
+            "port": 3001,
+            "agent": "main"
+        }
+    }
+}
