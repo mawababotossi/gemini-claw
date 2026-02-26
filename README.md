@@ -1,21 +1,25 @@
 # GeminiClaw
 
-Self-hosted AI agent gateway powered by `gemini-cli` via **ACP** (Agent Communication Protocol).
+**The Autonomous Supervisor for `gemini-cli`.**
 
-> Inspired by OpenClaw — bring the reasoning power of Gemini 3 to Telegram, WhatsApp and the Web.
+GeminiClaw transforms the official Google `gemini-cli` into a fully autonomous, self-hosted AI agent gateway using the **ACP** (Agent Communication Protocol).
 
-## Genesis & Motivation
+> Inspired by OpenClaw — bridging the gap between a standard CLI tool and a powerful, multi-channel autonomous agent.
 
-GeminiClaw was born from a critical observation: many users of tools like OpenClaw have seen their Google accounts banned for violating Terms of Service (TOS).
+## Genesis & Motivation: From CLI to Autonomous Agent
 
-### The Problem
-Using Gemini tokens via unofficial OAuth flows (on personal "flat-rate" accounts) to power third-party agents is strictly monitored by Google. This has led to massive suspensions, depriving users of access not only to Gemini, but sometimes to their entire Google services (Gmail, Drive, etc.).
+While Google provides the `gemini-cli` as a powerful tool for interacting with Gemini 3 models, it remains a developer-focused terminal tool. **GeminiClaw takes this engine and gives it "wings" (and autonomy).**
 
-### The GeminiClaw Solution
-Unlike "scraping" or unofficial OAuth approaches, GeminiClaw relies on the **official Google CLI** via the experimental **ACP (Agent Communication Protocol)**.
-*   **Compliance**: Uses legitimate communication channels provided by Google.
-*   **Security**: No need to share OAuth secrets or sensitive API keys with unverified third-party servers.
-*   **Sustainability**: Designed to align with the evolution of Google DeepMind's "agentic" ecosystem.
+### The Core Problem: Risk vs. Control
+Many users attempted to bridge Gemini into autonomous workflows using unofficial OAuth "scraping" methods (like OpenClaw), which led to massive Google account bans. These methods are brittle, unauthorized, and risky.
+
+### The GeminiClaw Evolution
+GeminiClaw doesn't just "talk" to Gemini; it **supervises a headless instance of the official CLI**, granting it full agency while staying within Google's legitimate ecosystem.
+
+*   **Turn CLI into Agent**: Transforms a one-shot command-line tool into a persistent, stateful agent that can live on Telegram, WhatsApp, or the Web.
+*   **Autonomous Agency**: Unlike the standard CLI, GeminiClaw enables autonomous "ReAct" loops where the model can use tools (MCP), read files, and execute commands iteratively to solve complex tasks without manual intervention.
+*   **TOS Compliance**: By using the experimental **ACP (Agent Communication Protocol)** built into the official `gemini` binary, you avoid the risks of account suspension associated with unofficial OAuth wrappers.
+*   **Production Ready**: Adds the missing pieces for a real agent: session persistence, multi-user routing, and a professional admin dashboard.
 
 ## Why GeminiClaw?
 
