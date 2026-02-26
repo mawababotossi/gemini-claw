@@ -11,7 +11,7 @@ type BaileysModule = any;
 
 import { join } from 'node:path';
 import { existsSync, mkdirSync } from 'node:fs';
-import type { Gateway } from '@geminiclaw/gateway';
+import type { IGateway } from '@geminiclaw/core';
 
 const CHANNEL = 'whatsapp';
 const AUTH_DIR = join(process.cwd(), 'data', 'whatsapp_auth');
@@ -29,7 +29,7 @@ export class WhatsAppAdapter {
         this.authDir = options.authDir ?? AUTH_DIR;
     }
 
-    async connect(gateway: Gateway): Promise<void> {
+    async connect(gateway: IGateway): Promise<void> {
         gateway.registerChannel(CHANNEL, async (peerId: string, text: string) => {
             if (!this.sock) return;
             try {
@@ -42,7 +42,7 @@ export class WhatsAppAdapter {
         await this.startSocket(gateway);
     }
 
-    private async startSocket(gateway: Gateway): Promise<void> {
+    private async startSocket(gateway: IGateway): Promise<void> {
         if (!existsSync(this.authDir)) {
             mkdirSync(this.authDir, { recursive: true });
         }

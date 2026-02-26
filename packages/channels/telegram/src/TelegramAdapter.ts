@@ -6,7 +6,7 @@
  * Supports private chats, groups (with optional @mention gating), and photos.
  */
 import { Telegraf } from 'telegraf';
-import type { Gateway } from '@geminiclaw/gateway';
+import type { IGateway } from '@geminiclaw/core';
 
 const CHANNEL = 'telegram';
 
@@ -26,9 +26,9 @@ export class TelegramAdapter {
         this.bot = new Telegraf(token);
     }
 
-    connect(gateway: Gateway): void {
+    connect(gateway: IGateway): void {
         // Register send callback so gateway can reply to Telegram
-        gateway.registerChannel(CHANNEL, async (peerId, text) => {
+        gateway.registerChannel(CHANNEL, async (peerId: string, text: string) => {
             try {
                 const chunks = this.splitMessage(text);
                 for (const chunk of chunks) {
@@ -83,7 +83,7 @@ export class TelegramAdapter {
         chatType: string,
         chatId: string,
         text: string,
-        gateway: Gateway,
+        gateway: IGateway,
     ): Promise<void> {
         const isGroup = chatType === 'group' || chatType === 'supergroup';
 

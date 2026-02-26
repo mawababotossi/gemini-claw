@@ -9,7 +9,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { createServer } from 'node:http';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Gateway } from '@geminiclaw/gateway';
+import type { IGateway } from '@geminiclaw/core';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CHANNEL = 'webchat';
@@ -26,7 +26,7 @@ export class WebChatAdapter {
 
     constructor(private port: number = 3001) { }
 
-    connect(gateway: Gateway): void {
+    connect(gateway: IGateway): void {
         // Register our send function with the gateway
         gateway.registerChannel(CHANNEL, async (peerId: string, text: string, thought?: string) => {
             const ws = this.clients.get(peerId);

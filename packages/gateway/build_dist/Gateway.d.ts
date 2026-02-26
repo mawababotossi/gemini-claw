@@ -7,12 +7,12 @@
  * calls the appropriate AgentRuntime and dispatches the response.
  */
 import type { InboundMessage, Session, ChatMessage } from '@geminiclaw/memory';
-import type { AgentConfig } from '@geminiclaw/core';
+import type { AgentConfig, IGateway } from '@geminiclaw/core';
 import { SkillMcpServer } from '@geminiclaw/skills';
 import type { GatewayConfig } from './types.js';
 /** Channel adapters register a send callback so the gateway can reply */
 export type SendCallback = (peerId: string, text: string, thought?: string) => Promise<void>;
-export declare class Gateway {
+export declare class Gateway implements IGateway {
     private config;
     private sessions;
     private transcripts;

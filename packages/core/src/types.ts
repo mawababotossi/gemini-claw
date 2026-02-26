@@ -47,3 +47,8 @@ export interface RuntimeConfig {
     dataDir: string;
     agents: AgentConfig[];
 }
+
+export interface IGateway {
+    registerChannel(channel: string, sendCallback: (peerId: string, text: string) => Promise<void>): void;
+    ingest(channel: string, peerId: string, text: string, attachments?: any[]): Promise<void>;
+}

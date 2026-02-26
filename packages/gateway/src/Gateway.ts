@@ -14,7 +14,7 @@ import type {
 } from '@geminiclaw/memory';
 import { SessionStore, TranscriptStore } from '@geminiclaw/memory';
 import { AgentRegistry } from '@geminiclaw/core';
-import type { AgentConfig } from '@geminiclaw/core';
+import type { AgentConfig, IGateway } from '@geminiclaw/core';
 import { SkillMcpServer, SkillRegistry, type Skill } from '@geminiclaw/skills';
 import { Type } from '@google/genai';
 import fs from 'node:fs';
@@ -26,7 +26,7 @@ import type { GatewayConfig, ChannelConfig } from './types.js';
 /** Channel adapters register a send callback so the gateway can reply */
 export type SendCallback = (peerId: string, text: string, thought?: string) => Promise<void>;
 
-export class Gateway {
+export class Gateway implements IGateway {
     private sessions: SessionStore;
     private transcripts: TranscriptStore;
     private registry: AgentRegistry;
