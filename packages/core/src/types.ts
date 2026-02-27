@@ -50,5 +50,5 @@ export interface RuntimeConfig {
 
 export interface IGateway {
     registerChannel(channel: string, sendCallback: (peerId: string, text: string) => Promise<void>): void;
-    ingest(channel: string, peerId: string, text: string, attachments?: any[]): Promise<void>;
+    ingest(channel: string, peerId: string, text: string, attachments?: any[], metadata?: Record<string, any>): Promise<void>;
 }

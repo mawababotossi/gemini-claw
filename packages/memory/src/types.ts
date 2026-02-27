@@ -29,6 +29,7 @@ export interface InboundMessage {
     peerId: string;
     text: string;
     attachments?: Attachment[];
+    metadata?: Record<string, any>;
     timestamp: number;
 }
 

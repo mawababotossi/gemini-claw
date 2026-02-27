@@ -51,6 +51,8 @@ async function main(): Promise<void> {
     console.log('[geminiclaw] Starting...');
 
     const config = loadConfig(CONFIG_PATH);
+    console.log(`[geminiclaw] Configuration loaded from: ${path.resolve(CONFIG_PATH)}`);
+    console.log(`[geminiclaw] Enabled channels: ${Object.keys(config.channels).filter(c => config.channels[c]?.enabled).join(', ')}`);
     const gateway = new Gateway(config);
 
     // ── Load channel adapters ─────────────────────────────────────────────
@@ -86,6 +88,7 @@ async function main(): Promise<void> {
         const waCfg = config.channels['whatsapp'];
         const wa = new WhatsAppAdapter({
             mentionOnly: waCfg?.mentionOnly ?? false,
+            phoneNumber: waCfg?.phoneNumber,
         });
         waAdapter = wa;
         wa.connect(gateway as any);
@@ -166,6 +169,25 @@ async function main(): Promise<void> {
         }
         await waAdapter.logout();
         res.json({ success: true });
+    });
+
+    // API: Get Channel Config
+    app.get('/api/channels/:name', (req, res) => {
+        const config = gateway.getChannelConfig(req.params.name);
+        if (!config) {
+            return res.status(404).json({ error: 'Channel not found' });
+        }
+        res.json(config);
+    });
+
+    // API: Update Channel Config
+    app.put('/api/channels/:name', async (req, res) => {
+        try {
+            await gateway.updateChannelConfig(req.params.name, req.body);
+            res.json({ success: true });
+        } catch (err: any) {
+            res.status(400).json({ error: err.message });
+        }
     });
 
     // API: Get transcript

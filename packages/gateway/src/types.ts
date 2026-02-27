@@ -8,7 +8,8 @@ export interface ChannelConfig {
     allowedUserIds?: number[];
     mentionOnly?: boolean;
     // WhatsApp-specific
-    allowedJids?: string[];
+    phoneNumber?: string;
+    allowList?: string[];
     // WebChat-specific
     port?: number;
 }

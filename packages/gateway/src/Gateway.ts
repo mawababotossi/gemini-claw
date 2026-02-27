@@ -253,9 +253,10 @@ export class Gateway implements IGateway {
         peerId: string,
         text: string,
         attachments?: InboundMessage['attachments'],
+        metadata?: Record<string, any>
     ): Promise<void> {
         // ACL check
-        if (!this.isAuthorized(channel, peerId)) {
+        if (!this.isAuthorized(channel, peerId, metadata)) {
             console.warn(`[gateway] Unauthorized: channel=${channel} peer=${peerId}`);
             return;
         }
@@ -299,12 +300,15 @@ export class Gateway implements IGateway {
 
     /** Send a message out via a registered channel send callback */
     async send(channel: string, peerId: string, text: string, thought?: string): Promise<void> {
+        console.log(`[gateway-debug] Attempting to send message to channel=${channel}, peerId=${peerId}`);
         const sendFn = this.sendCallbacks.get(channel);
         if (!sendFn) {
             console.warn(`[gateway] No send callback for channel: ${channel}`);
             return;
         }
+        console.log(`[gateway-debug] Found send callback for channel=${channel}. Calling it...`);
         await sendFn(peerId, text, thought);
+        console.log(`[gateway-debug] Send Fn for ${channel} returned.`);
     }
 
     /** Get all active sessions */
@@ -364,9 +368,25 @@ export class Gateway implements IGateway {
         const parsed = JSON.parse(raw);
 
         parsed.agents = newConfigs;
+        parsed.channels = this.channelConfigs;
 
         fs.writeFileSync(absPath, JSON.stringify(parsed, null, 4), 'utf8');
         console.log(`[gateway] Configuration persisted to ${configPath}`);
+    }
+
+    // ── Channel Management ───────────────────────────────────────────────────────
+
+    getChannelConfig(name: string): ChannelConfig | undefined {
+        return this.channelConfigs[name];
+    }
+
+    async updateChannelConfig(name: string, config: Partial<ChannelConfig>): Promise<void> {
+        if (!this.channelConfigs[name]) {
+            this.channelConfigs[name] = { enabled: false, agent: 'main' };
+        }
+        this.channelConfigs[name] = { ...this.channelConfigs[name], ...config };
+        await this.saveConfig();
+        console.log(`[gateway] Channel ${name} configuration updated.`);
     }
 
     async shutdown(): Promise<void> {
@@ -376,7 +396,10 @@ export class Gateway implements IGateway {
 
     // ── ACL ────────────────────────────────────────────────────────────────────
 
-    private isAuthorized(channel: string, peerId: string): boolean {
+    private isAuthorized(channel: string, peerId: string, metadata?: Record<string, any>): boolean {
+        // Always authorize messages sent from the bot owner/self
+        if (metadata?.fromMe === true) return true;
+
         const cfg = this.channelConfigs[channel];
         if (!cfg) return true; // No config = open (dev mode)
 
@@ -386,10 +409,22 @@ export class Gateway implements IGateway {
             return cfg.allowedUserIds.map(String).includes(peerId);
         }
 
-        // WhatsApp: check allowedJids
-        if ('allowedJids' in cfg && Array.isArray(cfg.allowedJids)) {
-            if (cfg.allowedJids.length === 0) return true;
-            return cfg.allowedJids.includes(peerId);
+        // WhatsApp: check allowList, default to phoneNumber, reject all others
+        if (channel === 'whatsapp') {
+            const hasAllowList = 'allowList' in cfg && Array.isArray(cfg.allowList) && cfg.allowList.length > 0;
+            const normalizedPeer = peerId.split('@')[0].split(':')[0];
+
+            if (hasAllowList) {
+                return cfg.allowList!.includes(normalizedPeer);
+            }
+
+            // Fallback to strict host number
+            if ('phoneNumber' in cfg && cfg.phoneNumber) {
+                return normalizedPeer === cfg.phoneNumber;
+            }
+
+            // Default deny if WhatsApp is enabled but no auth config exists
+            return false;
         }
 
         return true;

@@ -58,7 +58,11 @@
         "whatsapp": {
             "enabled": true,
             "agent": "main",
-            "mentionOnly": false
+            "mentionOnly": false,
+            "phoneNumber": "22898111917",
+            "allowList": [
+                "22898111917"
+            ]
         }
     }
 }
