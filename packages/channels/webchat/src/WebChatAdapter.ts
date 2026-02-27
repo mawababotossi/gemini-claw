@@ -29,6 +29,24 @@ export class WebChatAdapter {
     connect(gateway: IGateway): void {
         // Register our send function with the gateway
         gateway.registerChannel(CHANNEL, async (peerId: string, text: string, thought?: string) => {
+            if (peerId === '__BROADCAST__') {
+                // Broadcast to all clients
+                let data: any;
+                try {
+                    data = JSON.parse(text);
+                } catch {
+                    data = { type: 'message', from: 'assistant', text, thought };
+                }
+
+                const payload = JSON.stringify(data);
+                for (const ws of this.clients.values()) {
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(payload);
+                    }
+                }
+                return;
+            }
+
             const ws = this.clients.get(peerId);
             if (ws?.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: 'message', from: 'assistant', text, thought }));

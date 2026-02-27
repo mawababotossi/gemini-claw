@@ -261,6 +261,22 @@ export class Gateway implements IGateway {
             return;
         }
 
+        // Mirroring: If the owner speaks on one channel, show it on the other
+        if (this.isOwner(channel, peerId)) {
+            if (channel === 'webchat') {
+                // User spoke on WebChat -> Mirror to WhatsApp as a "Note to self"
+                const ownerJid = this.getOwnerJid();
+                if (ownerJid) {
+                    console.log(`[gateway-mirror] WebChat activity -> Mirroring to WhatsApp (${ownerJid})`);
+                    await this.send('whatsapp', ownerJid, text);
+                }
+            } else if (channel === 'whatsapp') {
+                // User spoke on WhatsApp (Note to self) -> Mirror to all WebChat clients
+                console.log(`[gateway-mirror] WhatsApp activity -> Mirroring to WebChat`);
+                await this.broadcastToWebChat({ type: 'message', from: 'user', text });
+            }
+        }
+
         // Resolve agent for this channel
         const channelConfig = this.channelConfigs[channel];
         const agentName = channelConfig?.agent ?? 'main';
@@ -296,6 +312,20 @@ export class Gateway implements IGateway {
 
         // Send the response back via the channel adapter
         await this.send(channel, peerId, response.text, response.thought);
+
+        // Mirroring Agent Response: If we replied to the owner, notify the other channel too
+        if (this.isOwner(channel, peerId)) {
+            if (channel === 'webchat') {
+                const ownerJid = this.getOwnerJid();
+                if (ownerJid) {
+                    console.log(`[gateway-mirror] Agent replied to WebChat -> Syncing to WhatsApp`);
+                    await this.send('whatsapp', ownerJid, response.text);
+                }
+            } else if (channel === 'whatsapp') {
+                console.log(`[gateway-mirror] Agent replied to WhatsApp -> Syncing to WebChat`);
+                await this.broadcastToWebChat({ type: 'message', from: 'assistant', text: response.text, thought: response.thought });
+            }
+        }
     }
 
     /** Send a message out via a registered channel send callback */
@@ -428,5 +458,32 @@ export class Gateway implements IGateway {
         }
 
         return true;
+    }
+
+    private getOwnerJid(): string | undefined {
+        const waCfg = this.channelConfigs['whatsapp'];
+        if (waCfg?.phoneNumber) {
+            const num = waCfg.phoneNumber;
+            return num.includes('@') ? num : `${num}@s.whatsapp.net`;
+        }
+        return undefined;
+    }
+
+    private isOwner(channel: string, peerId: string): boolean {
+        if (channel === 'webchat') return true;
+        if (channel === 'whatsapp') {
+            const ownerJid = this.getOwnerJid();
+            if (!ownerJid) return false;
+            const normOwner = ownerJid.split('@')[0];
+            const normPeer = peerId.split('@')[0].split(':')[0];
+            return normOwner === normPeer;
+        }
+        return false;
+    }
+
+    private async broadcastToWebChat(msg: any): Promise<void> {
+        // Special peerId convention or just bypass the map if the adapter supports it
+        // For now, let's use a special peerId "__BROADCAST__"
+        await this.send('webchat', '__BROADCAST__', JSON.stringify(msg));
     }
 }
