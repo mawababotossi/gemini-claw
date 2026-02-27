@@ -62,15 +62,12 @@ export function WebChat() {
                 const data = JSON.parse(event.data);
                 if (data.type === 'typing') {
                     setIsTyping(true);
-                } else if (data.type === 'message' && data.from === 'assistant') {
+                } else if (data.type === 'message' && (data.from === 'assistant' || data.from === 'user')) {
                     setIsTyping(false);
                     setMessages(prev => {
-                        // If the message contains thoughts, we update or append
-                        // For simplicity in this dev phase, we append the final message.
-                        // In a real scenario, we might want to handle chunks.
                         return [...prev, {
                             id: Date.now().toString(),
-                            role: 'assistant',
+                            role: data.from === 'assistant' ? 'assistant' : 'user',
                             text: data.text,
                             thought: data.thought
                         }];

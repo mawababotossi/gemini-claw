@@ -143,19 +143,44 @@ CRITICAL: You are an autonomous agent running within the GeminiClaw platform.
             timestamp: msg.timestamp,
         });
 
+        // Post-process the response to strip leaked English thoughts/recaps if they exist
+        const cleanedResponse = this.cleanResponse(responseText);
+
         // Append the assistant response with thoughts if they exist
         this.transcripts.append(msg.sessionId, {
             role: 'assistant',
-            content: responseText,
+            content: cleanedResponse,
             thought: thoughtChunks.trim() || undefined,
             timestamp: Date.now(),
         });
 
         return {
-            text: responseText,
+            text: cleanedResponse,
             sessionId: msg.sessionId,
             thought: thoughtChunks.trim() || undefined
         };
+    }
+
+    /**
+     * Heuristic to strip English thinking blocks/recaps that sometimes leak into 
+     * the message stream of reasoning models (like Gemini 3 Preview / 1.5 Pro).
+     */
+    private cleanResponse(text: string): string {
+        let clean = text.trim();
+
+        // Pattern 1: detect "I will search... I've analyzed... [Actual Response]"
+        // This often happens when the model "thinks out loud" in English before replying in French.
+        const englishRecapPattern = /^(?:I will|I'll|I have|I've|I'm|Analyzing|Searching|Reviewing|Expanding|Examining|Assessing)[\s\S]{20,500}?(?=[A-ZÀ-Ÿ][a-zà-ÿ]{2,}\s(?:[a-zà-ÿ]{2,}\s)?(?:est|sont|vais|viens|viendrai|serai|ai|as|a|avons|avez|ont))/;
+
+        const match = clean.match(englishRecapPattern);
+        if (match && match[0].length < clean.length * 0.8) {
+            // Only strip if the "recap" isn't the whole message (threshold 80%)
+            // and if there's a clear transition to what looks like a French sentence.
+            console.log(`[core/cleaner] Stripping leaked thinking block: "${match[0].substring(0, 50)}..."`);
+            clean = clean.substring(match[0].length).trim();
+        }
+
+        return clean;
     }
 
     /** Try fallback models in order if the primary fails */
