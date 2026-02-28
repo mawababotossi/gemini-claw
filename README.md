@@ -13,6 +13,39 @@
 
 ---
 
+## The Problem GeminiClaw Solves
+
+### The OpenClaw OAuth Ban Wave
+
+In early 2025, OpenClaw — an open-source AI agent framework that accumulated over 200,000 GitHub stars in just a few months — became the center of a mass account suspension crisis.
+
+To power its agents with Gemini 3 models, many OpenClaw users authenticated through **Google Antigravity OAuth**: they extracted OAuth tokens from Google's Antigravity IDE (a subsidized developer environment offering access to Gemini 2.5 Pro) and injected them into OpenClaw. This allowed them to bypass the official Gemini API's per-token pricing and instead run unlimited agent workloads against Google's flat-rate infrastructure.
+
+When usage spiked, Google's systems flagged the traffic. The response was swift and severe:
+
+- Hundreds of developers received **403 Terms of Service violation errors** with no prior warning
+- **Google AI Ultra subscribers paying $249.99/month** lost access without explanation or refund path
+- Some users reported that creating a fresh Google account also triggered a restriction
+- Access to linked services — Gmail, Workspace, YouTube — was threatened in some cases
+- The OpenClaw GitHub issue was ultimately closed as *"won't fix"* with a note that users should read provider ToS
+
+A Google DeepMind engineer described the enforcement publicly: the company had been seeing a massive increase in usage of the Antigravity backend that degraded quality of service, and needed to quickly shut off access to users not using the product as intended. OpenClaw's creator called the enforcement "pretty draconian" and removed Antigravity support entirely. Anthropic followed suit days later, updating its legal terms to explicitly ban OAuth token usage in third-party tools. Two of the three largest AI providers locked down third-party OAuth access in the same week.
+
+> The core issue was not technical — it was economic. Antigravity's OAuth infrastructure offered subsidized access to frontier models. Using it to power an autonomous agent that burns millions of tokens per session violated the implicit contract of flat-rate pricing. **Subscription OAuth from any provider is subsidized access running on borrowed time.**
+
+### The GeminiClaw Answer
+
+GeminiClaw was built from the ground up to sidestep this entire problem. Instead of extracting and reusing OAuth tokens from a subsidized IDE backend, it drives the **official `gemini-cli` binary directly** through its own supported integration protocol: `--experimental-acp`.
+
+| Approach | Auth method | Risk |
+|---|---|---|
+| OpenClaw + Antigravity OAuth | Extracts tokens from a subsidized IDE backend | ❌ ToS violation, account ban, no refund |
+| GeminiClaw + `gemini-cli` ACP | Runs the official binary you already authenticated | ✅ Fully within Google's intended use |
+
+The `--experimental-acp` mode is the **same protocol** used by Zed, Emacs, and other official integrations. Google ships and maintains it. GeminiClaw wraps it as a long-running supervised subprocess — your Google account authenticates `gemini-cli` once via the standard flow, and GeminiClaw never touches your OAuth tokens. It sends prompts to stdin and reads responses from stdout, exactly as an IDE would.
+
+---
+
 ## What is GeminiClaw?
 
 GeminiClaw is an **agent supervision platform** built on top of the official Google `gemini-cli`. It wraps the CLI's experimental **ACP (Agent Communication Protocol)** to expose Gemini 3 models as persistent, autonomous agents — reachable through Telegram, WhatsApp, a web chat, or your own channel.
@@ -96,7 +129,7 @@ gemini --version     # verify the CLI works
 ### 1. Clone & install
 
 ```bash
-git clone https://github.com/your-org/geminiclaw.git
+git clone https://github.com/mawababotossi/geminiclaw.git
 cd geminiclaw
 pnpm install
 pnpm build

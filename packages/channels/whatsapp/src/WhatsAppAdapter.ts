@@ -73,10 +73,10 @@ export class WhatsAppAdapter {
             async (peerId, text) => {
                 if (!this.sock) return;
                 try {
-                    const myJid = this.sock?.user?.id ? this.sock.user.id.split('@')[0].split(':')[0] + '@s.whatsapp.net' : '';
-                    // For self-chat, ALWAYS use the canonical JID to ensure it appears in the "Note to self" thread
-                    const isSelf = peerId === myJid;
-                    const realJid = isSelf ? myJid : (this.peerToLastJid.get(peerId) || peerId);
+                    // Always use the peerToLastJid map for the real send target.
+                    // For self-chat, this maps our canonical JID -> the LID JID that WhatsApp actually uses.
+                    // For normal chats, this maps the peer JID -> itself (or the last known JID).
+                    const realJid = this.peerToLastJid.get(peerId) || peerId;
 
                     console.log(`[whatsapp-debug] Sending message to ${realJid} (from peerId ${peerId}): ${text.slice(0, 50)}...`);
                     // Add a zero-width space to identify bot-generated messages

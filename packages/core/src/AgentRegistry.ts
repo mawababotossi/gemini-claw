@@ -112,7 +112,10 @@ export class AgentRegistry {
     }
 
     listConfigs(): AgentConfig[] {
-        return [...this.runtimes.values()].map(r => r.getConfig());
+        return [...this.runtimes.values()].map(r => ({
+            ...r.getConfig(),
+            status: r.getStatus()
+        }));
     }
 
     async shutdown(): Promise<void> {

@@ -28,6 +28,7 @@ export class AgentRuntime extends EventEmitter {
     private readonly BRIDGE_IDLE_TTL_MS = 30 * 60 * 1000; // 30 minutes
     private readonly TYPING_THROTTLE_MS = 3000; // Reduced to 3s for WhatsApp/WebChat visibility
     private gcInterval?: any;
+    private _status: NonNullable<AgentConfig['status']> = 'Healthy';
 
     constructor(
         config: AgentConfig,
@@ -57,6 +58,10 @@ export class AgentRuntime extends EventEmitter {
 
     getConfig(): AgentConfig {
         return this.config;
+    }
+
+    getStatus(): AgentConfig['status'] {
+        return this._status;
     }
 
     private async getBridge(userSessionId: string): Promise<ACPBridge> {
@@ -213,6 +218,8 @@ CRITICAL: You are an autonomous agent running within the GeminiClaw platform.
         // Log the exchange to the daily journal for future distillation
         this.logToJournal(msg.text, responseText);
 
+        this._status = 'Healthy';
+
         return {
             text: cleanedResponse,
             sessionId: msg.sessionId,
@@ -306,7 +313,10 @@ CRITICAL: You are an autonomous agent running within the GeminiClaw platform.
         originalError: unknown,
     ): Promise<AgentResponse> {
         const fallbacks = [...(this.config.modelCallback ? [this.config.modelCallback] : []), ...(this.config.fallbackModels ?? [])];
-        if (fallbacks.length === 0) throw originalError;
+        if (fallbacks.length === 0) {
+            this._status = 'Dead';
+            throw originalError;
+        }
 
         for (const fallbackModel of fallbacks) {
             try {
@@ -359,6 +369,8 @@ CRITICAL: You are an autonomous agent running within the GeminiClaw platform.
                     timestamp: Date.now(),
                 });
 
+                this._status = 'Healthy';
+
                 return {
                     text: finalResponse,
                     sessionId: msg.sessionId,
@@ -369,6 +381,7 @@ CRITICAL: You are an autonomous agent running within the GeminiClaw platform.
             }
         }
 
+        this._status = 'Dead';
         throw originalError;
     }
 
@@ -379,9 +392,12 @@ CRITICAL: You are an autonomous agent running within the GeminiClaw platform.
             const alive = await bridge.ping();
             if (!alive) {
                 console.warn(`[core/runtime] Bridge for session "${userSessionId}" unresponsive. Restarting...`);
+                this._status = 'Unresponsive';
                 bridge.stop();
                 this.bridges.delete(userSessionId);
                 this.sessionMap.delete(userSessionId);
+            } else {
+                this._status = 'Healthy';
             }
             return alive;
         }
@@ -397,6 +413,12 @@ CRITICAL: You are an autonomous agent running within the GeminiClaw platform.
                 this.sessionMap.delete(sid);
                 allAlive = false;
             }
+        }
+
+        if (!allAlive) {
+            this._status = 'Unresponsive';
+        } else {
+            this._status = 'Healthy';
         }
         return allAlive;
     }
@@ -474,8 +496,11 @@ ${systemPrompt}
                         text: finalResponse
                     });
                 }
+
+                this._status = 'Healthy';
             } catch (err) {
                 console.error(`[core/runtime] Heartbeat failed for ${this.config.name}:`, err);
+                this._status = 'Unresponsive';
             }
         };
 

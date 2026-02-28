@@ -21,6 +21,8 @@ export interface AgentConfig {
     mcpServers?: any[];
     /** Base directory for agent-specific files (AGENTS.md, USER.md, SOUL.md, workspace/) */
     baseDir?: string;
+    /** Dynamic connection health status (injected at runtime, not persisted) */
+    status?: 'Healthy' | 'Unresponsive' | 'Restarting' | 'Dead';
     /** Proactive heartbeat/distillation configuration */
     heartbeat?: {
         enabled: boolean;
