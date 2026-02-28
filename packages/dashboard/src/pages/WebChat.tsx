@@ -48,7 +48,7 @@ export function WebChat() {
 
     const connect = () => {
         // Determine the gateway host. In dev, dashboard is on 5173, gateway is on 3001.
-        const wsUrl = `ws://localhost:3001`; // Using the static port of the WebChat channel for now
+        const wsUrl = `ws://${window.location.hostname}:3001`; // Using the static port of the WebChat channel for now
 
         const ws = new WebSocket(wsUrl);
 
