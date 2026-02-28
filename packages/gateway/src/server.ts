@@ -22,6 +22,8 @@ const originalConsole = {
     warn: console.warn,
     error: console.error,
     info: console.info,
+    debug: console.debug,
+    trace: console.trace,
 };
 
 function broadcastLog(level: string, ...args: any[]) {
@@ -40,10 +42,12 @@ function broadcastLog(level: string, ...args: any[]) {
     }
 }
 
-console.log = (...args) => broadcastLog('log', ...args);
+console.log = (...args) => broadcastLog('info', ...args);
 console.warn = (...args) => broadcastLog('warn', ...args);
 console.error = (...args) => broadcastLog('error', ...args);
 console.info = (...args) => broadcastLog('info', ...args);
+console.debug = (...args) => broadcastLog('debug', ...args);
+console.trace = (...args) => broadcastLog('trace', ...args);
 // ------------------------
 
 const CONFIG_PATH = process.env['CONFIG_PATH'] ?? './config/geminiclaw.json';
@@ -333,19 +337,36 @@ async function main(): Promise<void> {
             const baseDir = runtime.getConfig().baseDir;
             if (!baseDir) return res.json([]);
 
-            const memoryDir = path.join(baseDir, 'memory');
-            if (!fs.existsSync(memoryDir)) return res.json([]);
+            const allFiles: any[] = [];
 
-            const files = fs.readdirSync(memoryDir)
+            // 1. Files in baseDir (SOUL.md, etc.)
+            const rootFiles = fs.readdirSync(baseDir)
                 .filter(f => f.endsWith('.md'))
-                .sort()
-                .reverse()
-                .map(f => ({
-                    name: f,
-                    size: fs.statSync(path.join(memoryDir, f)).size,
-                    mtime: fs.statSync(path.join(memoryDir, f)).mtime
-                }));
-            res.json(files);
+                .map(f => {
+                    const stats = fs.statSync(path.join(baseDir, f));
+                    return { name: f, size: stats.size, mtime: stats.mtime, isRoot: true };
+                });
+            allFiles.push(...rootFiles);
+
+            // 2. Files in memoryDir (Journal, etc.)
+            const memoryDir = path.join(baseDir, 'memory');
+            if (fs.existsSync(memoryDir)) {
+                const memFiles = fs.readdirSync(memoryDir)
+                    .filter(f => f.endsWith('.md'))
+                    .map(f => {
+                        const stats = fs.statSync(path.join(memoryDir, f));
+                        return { name: f, size: stats.size, mtime: stats.mtime, isRoot: false };
+                    });
+                allFiles.push(...memFiles);
+            }
+
+            // Sort: Root files first, then memory files descending by mtime
+            allFiles.sort((a, b) => {
+                if (a.isRoot !== b.isRoot) return a.isRoot ? -1 : 1;
+                return b.mtime.getTime() - a.mtime.getTime();
+            });
+
+            res.json(allFiles);
         } catch (err: any) {
             res.status(404).json({ error: err.message });
         }
@@ -358,13 +379,40 @@ async function main(): Promise<void> {
             const baseDir = runtime.getConfig().baseDir;
             if (!baseDir) throw new Error('No base directory');
 
-            const filePath = path.join(baseDir, 'memory', req.params.filename);
+            let filePath = path.join(baseDir, 'memory', req.params.filename);
+            if (!fs.existsSync(filePath)) {
+                filePath = path.join(baseDir, req.params.filename);
+            }
+
             if (!fs.existsSync(filePath)) throw new Error('File not found');
 
             const content = fs.readFileSync(filePath, 'utf8');
             res.json({ content });
         } catch (err: any) {
             res.status(404).json({ error: err.message });
+        }
+    });
+
+    // API: Write agent memory journal content
+    app.put('/api/agents/:name/memory/:filename', (req, res) => {
+        try {
+            const runtime = gateway.registry.get(req.params.name);
+            const baseDir = runtime.getConfig().baseDir;
+            if (!baseDir) throw new Error('No base directory');
+
+            let filePath = path.join(baseDir, 'memory', req.params.filename);
+            if (!fs.existsSync(filePath)) {
+                filePath = path.join(baseDir, req.params.filename);
+            }
+
+            if (!fs.existsSync(filePath)) throw new Error('File not found');
+
+            if (typeof req.body.content !== 'string') throw new Error('Missing content body');
+
+            fs.writeFileSync(filePath, req.body.content, 'utf8');
+            res.json({ success: true });
+        } catch (err: any) {
+            res.status(500).json({ error: err.message });
         }
     });
 

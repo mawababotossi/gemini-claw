@@ -22,6 +22,12 @@ export interface AgentConfig {
     allowedPermissions?: string[];
     baseDir?: string;
     status?: 'Healthy' | 'Unresponsive' | 'Restarting' | 'Dead';
+    heartbeat?: {
+        enabled: boolean;
+        cron?: string;
+    };
+    authType?: string;
+    apiKey?: string;
 }
 
 export interface AppStatus {
@@ -117,6 +123,10 @@ export const api = {
         return response.data.content;
     },
 
+    async updateAgentMemoryContent(agentName: string, filename: string, content: string): Promise<void> {
+        await axios.put(`${API_BASE_URL}/agents/${agentName}/memory/${filename}`, { content });
+    },
+
     async getSkills(): Promise<{ native: any[], project: any[] }> {
         const response = await axios.get(`${API_BASE_URL}/skills`);
         return response.data;
@@ -124,6 +134,31 @@ export const api = {
 
     async getSessions(): Promise<any[]> {
         const response = await axios.get(`${API_BASE_URL}/sessions`);
+        return response.data;
+    },
+
+    // ── Channels ──
+    async getWhatsAppStatus(): Promise<any> {
+        const response = await axios.get(`${API_BASE_URL}/channels/whatsapp/status`);
+        return response.data;
+    },
+
+    async logoutWhatsApp(): Promise<void> {
+        await axios.post(`${API_BASE_URL}/channels/whatsapp/logout`);
+    },
+
+    async getChannelConfig(name: string): Promise<any> {
+        const response = await axios.get(`${API_BASE_URL}/channels/${name}`);
+        return response.data;
+    },
+
+    async updateChannelConfig(name: string, config: any): Promise<void> {
+        await axios.put(`${API_BASE_URL}/channels/${name}`, config);
+    },
+
+    // ── Transcripts ──
+    async getTranscript(channel: string, peerId: string): Promise<any[]> {
+        const response = await axios.get(`${API_BASE_URL}/transcripts/${channel}/${peerId}`);
         return response.data;
     }
 };

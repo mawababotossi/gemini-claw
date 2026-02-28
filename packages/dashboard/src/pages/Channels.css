@@ -1,46 +1,152 @@
-.channels-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
-    gap: 1.5rem;
-}
-
-.channel-card {
+.channels-page {
+    height: 100%;
     display: flex;
     flex-direction: column;
-    padding: 1.5rem;
 }
 
-.channel-header {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    margin-bottom: 1.5rem;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    padding-bottom: 1rem;
-}
-
-.channel-content {
+.channels-list-panel {
     display: flex;
     flex-direction: column;
-    align-items: center;
-    text-align: center;
-    gap: 1rem;
+    overflow: hidden;
 }
 
-.qr-container {
+.channels-list {
     display: flex;
     flex-direction: column;
+}
+
+.channel-row {
+    transition: background 0.2s ease;
+}
+
+.channel-row:hover {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.channel-icon-wrapper {
+    width: 48px;
+    height: 48px;
+    border-radius: var(--radius-md);
+    display: flex;
     align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--border);
 }
 
-.qr-box {
-    background-color: white;
-    padding: 1rem;
-    border-radius: 8px;
-    margin: 1.5rem 0;
-    display: inline-block;
+.channel-icon-wrapper.whatsapp {
+    color: var(--success);
+    background: rgba(16, 185, 129, 0.1);
+    border-color: rgba(16, 185, 129, 0.2);
 }
 
-.mt-4 {
-    margin-top: 1rem;
+.channel-icon-wrapper.telegram {
+    color: #0088cc;
+    background: rgba(0, 136, 204, 0.1);
+    border-color: rgba(0, 136, 204, 0.2);
+}
+
+.channel-name {
+    font-size: 1rem;
+    font-weight: 700;
+    margin: 0;
+}
+
+.channel-desc {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin: 0;
+}
+
+/* ─── Status Badges ──────────────────────────────────────────────────────── */
+
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.65rem;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+}
+
+.status-connected {
+    background: rgba(16, 185, 129, 0.15);
+    color: var(--success);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.status-warning {
+    background: rgba(245, 158, 11, 0.15);
+    color: var(--warning);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.status-disabled {
+    background: rgba(100, 116, 139, 0.15);
+    color: var(--text-muted);
+    border: 1px solid rgba(100, 116, 139, 0.3);
+}
+
+.status-unknown {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--danger);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+/* ─── Forms ──────────────────────────────────────────────────────────────── */
+
+.form-control-v2 {
+    width: 100%;
+    padding: 0.6rem 0.8rem;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    color: white;
+    font-family: inherit;
+    font-size: 0.9rem;
+    outline: none;
+    transition: all 0.2s;
+}
+
+.form-control-v2:focus {
+    border-color: var(--primary);
+    background: rgba(0, 0, 0, 0.5);
+    box-shadow: 0 0 0 2px var(--primary-glow);
+}
+
+textarea.form-control-v2 {
+    resize: vertical;
+    min-height: 60px;
+}
+
+/* ─── QR Section ─────────────────────────────────────────────────────────── */
+
+.channel-qr-section {
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+}
+
+.qr-wrapper {
+    background: white;
+}
+
+/* ─── Helpers ────────────────────────────────────────────────────────────── */
+
+.btn-block {
+    width: 100%;
+}
+
+@keyframes pulse-danger {
+    0% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.4;
+    }
+
+    100% {
+        opacity: 1;
+    }
 }

@@ -1,26 +1,739 @@
-import { useState, useEffect } from 'react';
-import { Bot, RefreshCw, Save, Trash2, Settings, FileText, Wrench, Zap, Radio, Calendar, X, Plus } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import {
+    Bot, RefreshCw, Save, Trash2, Settings, FileText,
+    Wrench, Zap, Radio, Calendar, Plus,
+    ShieldOff, AlertTriangle, CheckCircle2,
+    Clock, GitBranch, Loader2
+} from 'lucide-react';
 import { api, type AgentConfig } from '../services/api';
 import './Agents.css';
 
 type TabType = 'overview' | 'files' | 'tools' | 'skills' | 'channels' | 'cron';
 
+const ALL_PERMISSIONS = [
+    { id: 'read_file', label: 'read_file', desc: 'Read files from the filesystem' },
+    { id: 'write_file', label: 'write_file', desc: 'Write and modify files' },
+    { id: 'run_shell_command', label: 'run_shell_command', desc: 'Execute shell commands' },
+    { id: 'network', label: 'network', desc: 'Make network requests' },
+    { id: 'getCurrentTime', label: 'getCurrentTime', desc: 'Read current date/time' },
+    { id: 'readMemoryFile', label: 'readMemoryFile', desc: 'Read agent memory files' },
+    { id: 'updateMemoryFile', label: 'updateMemoryFile', desc: 'Write to agent memory files' },
+    { id: 'delegate_task', label: 'delegate_task', desc: 'Delegate to another agent' },
+    { id: 'schedule_task', label: 'schedule_task', desc: 'Schedule a cron task' },
+    { id: 'google_web_search', label: 'google_web_search', desc: 'Search the web' },
+];
+
+const CHANNEL_COLORS: Record<string, string> = {
+    whatsapp: '#25D366',
+    telegram: '#2AABEE',
+    webchat: 'var(--primary)',
+};
+
+// ─── Small helpers ──────────────────────────────────────────────────────────
+
+function StatusBadge({ status }: { status?: string }) {
+    const map: Record<string, { color: string; bg: string }> = {
+        Healthy: { color: 'var(--success)', bg: 'rgba(16,185,129,.12)' },
+        Unresponsive: { color: 'var(--warning)', bg: 'rgba(245,158,11,.12)' },
+        Restarting: { color: 'var(--warning)', bg: 'rgba(245,158,11,.12)' },
+        Dead: { color: 'var(--danger)', bg: 'rgba(239,68,68,.12)' },
+    };
+    const s = map[status ?? ''] ?? { color: 'var(--text-muted)', bg: 'rgba(255,255,255,.05)' };
+    return (
+        <span style={{
+            fontSize: '0.72rem', fontWeight: 600, padding: '0.2rem 0.55rem',
+            borderRadius: 'var(--radius-full)', background: s.bg, color: s.color,
+            letterSpacing: '0.04em', textTransform: 'uppercase',
+        }}>
+            {status ?? 'Unknown'}
+        </span>
+    );
+}
+
+function SectionTitle({ children }: { children: React.ReactNode }) {
+    return (
+        <div style={{
+            fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)',
+            textTransform: 'uppercase', letterSpacing: '0.1em',
+            marginBottom: '0.75rem', paddingBottom: '0.5rem',
+            borderBottom: '1px solid var(--border)',
+        }}>
+            {children}
+        </div>
+    );
+}
+
+function FormField({
+    label, children, hint
+}: { label: string; children: React.ReactNode; hint?: string }) {
+    return (
+        <div className="form-group" style={{ marginBottom: '1rem' }}>
+            <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.4rem' }}>
+                {label}
+            </label>
+            {children}
+            {hint && <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.3rem' }}>{hint}</p>}
+        </div>
+    );
+}
+
+function EmptyState({ icon, title, description }: { icon: React.ReactNode; title: string; description: string }) {
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '3rem 2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+            <div style={{ opacity: 0.3, marginBottom: '1rem' }}>{icon}</div>
+            <h3 style={{ color: 'var(--text-secondary)', fontSize: '1rem', marginBottom: '0.4rem' }}>{title}</h3>
+            <p style={{ fontSize: '0.85rem', maxWidth: '280px' }}>{description}</p>
+        </div>
+    );
+}
+
+// ─── Tab: Overview ──────────────────────────────────────────────────────────
+
+function OverviewTab({
+    formData, setFormData, models, isCreating, onSave, onReload, isSaving
+}: {
+    formData: AgentConfig;
+    setFormData: (d: AgentConfig) => void;
+    models: string[];
+    isCreating: boolean;
+    onSave: (e: React.FormEvent) => void;
+    onReload: () => void;
+    isSaving: boolean;
+}) {
+    const togglePermission = (id: string) => {
+        const current = formData.allowedPermissions ?? [];
+        const next = current.includes(id) ? current.filter(p => p !== id) : [...current, id];
+        setFormData({ ...formData, allowedPermissions: next });
+    };
+
+    const granted = formData.allowedPermissions ?? [];
+
+    return (
+        <form onSubmit={onSave} className="tab-content animate-fade-in" style={{ maxWidth: '680px' }}>
+
+            {/* Identity */}
+            <SectionTitle>Identity</SectionTitle>
+            <div className="form-row split-form" style={{ marginBottom: '1rem' }}>
+                <FormField label="Agent Name" hint={isCreating ? 'Cannot be changed after creation.' : undefined}>
+                    <input
+                        className="form-input"
+                        value={formData.name}
+                        onChange={e => setFormData({ ...formData, name: e.target.value })}
+                        placeholder="e.g. main"
+                        required
+                        disabled={!isCreating}
+                        style={{ opacity: isCreating ? 1 : 0.6 }}
+                    />
+                </FormField>
+                <FormField label="Base Directory">
+                    <input
+                        className="form-input"
+                        value={formData.baseDir ?? ''}
+                        onChange={e => setFormData({ ...formData, baseDir: e.target.value })}
+                        placeholder="e.g. ./data/agents/main"
+                    />
+                </FormField>
+            </div>
+
+            {/* Models */}
+            <SectionTitle>Model Selection</SectionTitle>
+            <div className="form-row split-form" style={{ marginBottom: '0.75rem' }}>
+                <FormField label="Primary Model">
+                    <select
+                        className="form-select"
+                        value={formData.model}
+                        onChange={e => setFormData({ ...formData, model: e.target.value })}
+                        required
+                    >
+                        <option value="" disabled>Select a model</option>
+                        {models.map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                </FormField>
+                <FormField label="Callback Model (Fallback #1)">
+                    <select
+                        className="form-select"
+                        value={formData.modelCallback ?? ''}
+                        onChange={e => setFormData({ ...formData, modelCallback: e.target.value })}
+                    >
+                        <option value="">None</option>
+                        {models.map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                </FormField>
+            </div>
+            <FormField label="Additional Fallbacks (comma-separated)" hint="Tried in order after callback fails.">
+                <input
+                    className="form-input"
+                    value={(formData.fallbackModels ?? []).join(', ')}
+                    onChange={e => setFormData({
+                        ...formData,
+                        fallbackModels: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
+                    })}
+                    placeholder="e.g. gemini-1.5-pro, gemini-1.5-flash"
+                />
+            </FormField>
+
+            {/* Heartbeat */}
+            <SectionTitle>Heartbeat</SectionTitle>
+            <div className="form-row split-form" style={{ marginBottom: '1rem' }}>
+                <FormField label="Enabled">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', paddingTop: '0.4rem' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-primary)' }}>
+                            <input
+                                type="checkbox"
+                                checked={formData.heartbeat?.enabled ?? false}
+                                onChange={e => setFormData({ ...formData, heartbeat: { ...(formData.heartbeat ?? {}), enabled: e.target.checked } })}
+                                style={{ accentColor: 'var(--primary)', width: '15px', height: '15px' }}
+                            />
+                            Active
+                        </label>
+                    </div>
+                </FormField>
+                <FormField label="Cron Expression" hint="e.g. 0 8,20 * * *">
+                    <input
+                        className="form-input"
+                        value={formData.heartbeat?.cron ?? ''}
+                        onChange={e => setFormData({ ...formData, heartbeat: { ...(formData.heartbeat ?? {}), enabled: formData.heartbeat?.enabled ?? false, cron: e.target.value } })}
+                        placeholder="0 8,20 * * * (UTC)"
+                        disabled={!formData.heartbeat?.enabled}
+                        style={{ opacity: formData.heartbeat?.enabled ? 1 : 0.4 }}
+                    />
+                </FormField>
+            </div>
+
+            {/* Auth */}
+            <SectionTitle>Authentication</SectionTitle>
+            <div className="form-row split-form" style={{ marginBottom: '1rem' }}>
+                <FormField label="Auth Type">
+                    <select
+                        className="form-select"
+                        value={formData.authType ?? 'oauth-personal'}
+                        onChange={e => setFormData({ ...formData, authType: e.target.value as any })}
+                    >
+                        <option value="oauth-personal">OAuth (Personal)</option>
+                        <option value="gemini-api-key">Gemini API Key</option>
+                        <option value="vertex-ai">Vertex AI</option>
+                    </select>
+                </FormField>
+                <FormField label="API Key" hint="Only required for gemini-api-key auth.">
+                    <input
+                        className="form-input"
+                        type="password"
+                        value={formData.apiKey ?? ''}
+                        onChange={e => setFormData({ ...formData, apiKey: e.target.value })}
+                        placeholder="Leave empty to use env variable"
+                        disabled={formData.authType !== 'gemini-api-key'}
+                        style={{ opacity: formData.authType === 'gemini-api-key' ? 1 : 0.4 }}
+                    />
+                </FormField>
+            </div>
+
+            {/* Permissions */}
+            <SectionTitle>Allowed Permissions</SectionTitle>
+            {granted.length === 0 && (
+                <div style={{
+                    display: 'flex', alignItems: 'center', gap: '0.6rem',
+                    padding: '0.6rem 0.8rem', borderRadius: 'var(--radius-md)',
+                    background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)',
+                    marginBottom: '0.75rem',
+                }}>
+                    <AlertTriangle size={14} style={{ color: 'var(--warning)', flexShrink: 0 }} />
+                    <span style={{ fontSize: '0.8rem', color: 'var(--warning)' }}>
+                        No permissions granted — agent tools requiring authorization will be blocked.
+                    </span>
+                </div>
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginBottom: '1.5rem' }}>
+                {ALL_PERMISSIONS.map(p => {
+                    const active = granted.includes(p.id);
+                    return (
+                        <label key={p.id} style={{
+                            display: 'flex', alignItems: 'center', gap: '0.75rem',
+                            padding: '0.6rem 0.75rem', borderRadius: 'var(--radius-md)',
+                            border: `1px solid ${active ? 'rgba(99,102,241,0.3)' : 'var(--border)'}`,
+                            background: active ? 'rgba(99,102,241,0.06)' : 'transparent',
+                            cursor: 'pointer', transition: 'all 0.15s',
+                        }}>
+                            <input
+                                type="checkbox"
+                                checked={active}
+                                onChange={() => togglePermission(p.id)}
+                                style={{ accentColor: 'var(--primary)', width: '14px', height: '14px', flexShrink: 0 }}
+                            />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <span style={{ fontSize: '0.85rem', fontWeight: 600, color: active ? 'var(--primary)' : 'var(--text-secondary)', fontFamily: 'monospace' }}>
+                                    {p.label}
+                                </span>
+                                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginLeft: '0.75rem' }}>{p.desc}</span>
+                            </div>
+                            {active
+                                ? <CheckCircle2 size={14} style={{ color: 'var(--primary)', flexShrink: 0 }} />
+                                : <ShieldOff size={14} style={{ color: 'var(--text-muted)', flexShrink: 0, opacity: 0.4 }} />
+                            }
+                        </label>
+                    );
+                })}
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', paddingTop: '0.5rem', borderTop: '1px solid var(--border)' }}>
+                <button type="button" className="btn btn-outline" onClick={onReload} disabled={isSaving}>
+                    <RefreshCw size={14} /> Reload Config
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={isSaving}>
+                    {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                    {isCreating ? 'Create Agent' : 'Save Changes'}
+                </button>
+            </div>
+        </form>
+    );
+}
+
+// ─── Tab: Files ──────────────────────────────────────────────────────────────
+
+function FilesTab({ agentName, memory }: { agentName: string; memory: any[] }) {
+    const [activeFile, setActiveFile] = useState<string | null>(null);
+    const [fileContent, setFileContent] = useState<string>('');
+    const [isLoading, setIsLoading] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+
+    useEffect(() => {
+        if (memory.length > 0 && !activeFile) {
+            setActiveFile(memory[0].name);
+        }
+    }, [memory, activeFile]);
+
+    useEffect(() => {
+        if (activeFile) {
+            loadFile(activeFile);
+        }
+    }, [activeFile, agentName]);
+
+    const loadFile = async (filename: string) => {
+        setIsLoading(true);
+        try {
+            const content = await api.getAgentMemoryContent(agentName, filename);
+            setFileContent(content);
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleSave = async () => {
+        if (!activeFile) return;
+        setIsSaving(true);
+        try {
+            await api.updateAgentMemoryContent(agentName, activeFile, fileContent);
+        } catch (err) {
+            alert('Failed to save file');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const formatTimeAgo = (timestamp?: number) => {
+        if (!timestamp) return '';
+        const diff = Date.now() - timestamp;
+        if (diff < 60000) return 'Just now';
+        if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+        if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+        return `${Math.floor(diff / 86400000)}d ago`;
+    };
+
+    if (memory.length === 0) {
+        return (
+            <div className="tab-content animate-fade-in" style={{ height: '100%' }}>
+                <EmptyState
+                    icon={<FileText size={48} />}
+                    title="No memory files found"
+                    description={`Agent "${agentName}" has no memory files yet. They will be created on first run.`}
+                />
+            </div>
+        );
+    }
+
+    const activeFileData = memory.find(m => m.name === activeFile);
+
+    return (
+        <div className="tab-content animate-fade-in files-split-layout">
+            <div className="files-sidebar">
+                {memory.map((file: any) => (
+                    <div
+                        key={file.name}
+                        className={`file-nav-item ${activeFile === file.name ? 'active' : ''}`}
+                        onClick={() => setActiveFile(file.name)}
+                    >
+                        <div className="file-nav-title">{file.name}</div>
+                        <div className="file-nav-meta">
+                            {file.size ? `${(file.size / 1024).toFixed(1)} KB` : '0 KB'}
+                            {file.mtime && ` · ${formatTimeAgo(file.mtime)}`}
+                        </div>
+                    </div>
+                ))}
+            </div>
+            <div className="files-editor-panel glass-panel">
+                {activeFile ? (
+                    <>
+                        <div className="editor-header">
+                            <div>
+                                <span className="editor-filename">{activeFile}</span>
+                                <span className="editor-meta">
+                                    {activeFileData?.size ? `${(activeFileData.size / 1024).toFixed(1)} KB` : '0 KB'}
+                                    {activeFileData?.mtime && ` · modified ${formatTimeAgo(activeFileData.mtime)}`}
+                                </span>
+                            </div>
+                            <button className="btn btn-outline" style={{ padding: '0.35rem 0.85rem', fontSize: '0.8rem', background: 'rgba(0,0,0,0.2)' }} onClick={handleSave} disabled={isSaving || isLoading}>
+                                {isSaving ? <Loader2 size={13} className="animate-spin" /> : 'Save'}
+                            </button>
+                        </div>
+                        <div className="editor-content-wrapper">
+                            {isLoading ? (
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', opacity: 0.5 }}>
+                                    <Loader2 size={24} className="animate-spin text-muted" />
+                                </div>
+                            ) : (
+                                <textarea
+                                    className="editor-textarea"
+                                    value={fileContent}
+                                    onChange={(e) => setFileContent(e.target.value)}
+                                    spellCheck={false}
+                                />
+                            )}
+                        </div>
+                    </>
+                ) : (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)' }}>
+                        Select a file to view and edit
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+// ─── Tab: Tools ──────────────────────────────────────────────────────────────
+
+function ToolsTab({ agent }: { agent: AgentConfig }) {
+    const allTools = ALL_PERMISSIONS;
+    const granted = agent.allowedPermissions ?? [];
+
+    return (
+        <div className="tab-content animate-fade-in">
+            <SectionTitle>MCP Tool Access — geminiclaw-skills</SectionTitle>
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
+                Tool access is controlled by <strong>Allowed Permissions</strong> in the Overview tab.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                {allTools.map(tool => {
+                    const active = granted.includes(tool.id);
+                    return (
+                        <div key={tool.id} style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            padding: '0.7rem 1rem', borderRadius: 'var(--radius-md)',
+                            background: 'var(--bg-card)',
+                            border: `1px solid ${active ? 'rgba(99,102,241,0.2)' : 'var(--border)'}`,
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                {active
+                                    ? <CheckCircle2 size={15} style={{ color: 'var(--success)', flexShrink: 0 }} />
+                                    : <ShieldOff size={15} style={{ color: 'var(--danger)', flexShrink: 0, opacity: 0.6 }} />
+                                }
+                                <div>
+                                    <span style={{ fontFamily: 'monospace', fontSize: '0.85rem', fontWeight: 600, color: active ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                                        {tool.label}
+                                    </span>
+                                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginLeft: '0.75rem' }}>{tool.desc}</span>
+                                </div>
+                            </div>
+                            <span style={{
+                                fontSize: '0.7rem', fontWeight: 600, padding: '0.2rem 0.55rem',
+                                borderRadius: 'var(--radius-full)', textTransform: 'uppercase',
+                                background: active ? 'rgba(16,185,129,.12)' : 'rgba(239,68,68,.1)',
+                                color: active ? 'var(--success)' : 'var(--danger)',
+                            }}>
+                                {active ? 'Allowed' : 'Blocked'}
+                            </span>
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
+
+// ─── Tab: Skills ─────────────────────────────────────────────────────────────
+
+function SkillsTab({ availableSkills, agent }: {
+    availableSkills: { native: any[]; project: any[] };
+    agent: AgentConfig;
+}) {
+    const [search, setSearch] = useState('');
+    const granted = agent.allowedPermissions ?? [];
+
+    const filterSkills = (list: any[]) =>
+        list.filter(s => s.name?.toLowerCase().includes(search.toLowerCase()) ||
+            s.description?.toLowerCase().includes(search.toLowerCase()));
+
+    const native = filterSkills(availableSkills.native);
+    const project = filterSkills(availableSkills.project);
+
+    const SkillRow = ({ skill }: { skill: any }) => {
+        const isGranted = granted.includes(skill.name);
+        return (
+            <div style={{
+                padding: '0.75rem 1rem', borderRadius: 'var(--radius-md)',
+                background: 'var(--bg-card)', border: '1px solid var(--border)',
+                display: 'flex', alignItems: 'flex-start', gap: '0.75rem',
+            }}>
+                <div style={{
+                    width: 32, height: 32, borderRadius: 'var(--radius-sm)', flexShrink: 0,
+                    background: 'rgba(99,102,241,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: '1rem',
+                }}>
+                    {skill.icon ?? '⚡'}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.2rem' }}>
+                        <span style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-primary)' }}>{skill.name}</span>
+                        <span style={{
+                            fontSize: '0.67rem', fontWeight: 700, padding: '0.15rem 0.45rem',
+                            borderRadius: 'var(--radius-full)', textTransform: 'uppercase',
+                            background: isGranted ? 'rgba(16,185,129,.1)' : 'rgba(239,68,68,.1)',
+                            color: isGranted ? 'var(--success)' : 'var(--danger)',
+                        }}>
+                            {isGranted ? 'Active' : 'Blocked'}
+                        </span>
+                        {skill.missing && (
+                            <span style={{ fontSize: '0.72rem', color: 'var(--warning)' }}>
+                                Missing: {skill.missing}
+                            </span>
+                        )}
+                    </div>
+                    <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0 }}>{skill.description}</p>
+                </div>
+            </div>
+        );
+    };
+
+    return (
+        <div className="tab-content animate-fade-in">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.25rem' }}>
+                <div style={{ position: 'relative', flex: 1 }}>
+                    <input
+                        className="form-input"
+                        placeholder="Search skills..."
+                        value={search}
+                        onChange={e => setSearch(e.target.value)}
+                        style={{ paddingLeft: '0.9rem' }}
+                    />
+                </div>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', flexShrink: 0 }}>
+                    {native.length + project.length} shown
+                </span>
+            </div>
+
+            {project.length > 0 && (
+                <div style={{ marginBottom: '1.5rem' }}>
+                    <SectionTitle>Project Skills — {project.length}</SectionTitle>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                        {project.map(s => <SkillRow key={s.name} skill={s} />)}
+                    </div>
+                </div>
+            )}
+
+            <div>
+                <SectionTitle>Native Tools — {native.length}</SectionTitle>
+                {native.length > 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                        {native.map(s => <SkillRow key={s.name} skill={s} />)}
+                    </div>
+                ) : (
+                    <EmptyState
+                        icon={<Zap size={40} />}
+                        title="No skills found"
+                        description="Try a different search term."
+                    />
+                )}
+            </div>
+        </div>
+    );
+}
+
+// ─── Tab: Channels ────────────────────────────────────────────────────────────
+
+function ChannelsTab({ sessions }: { sessions: any[] }) {
+    const channelGroups: Record<string, any[]> = {};
+    sessions.forEach(s => {
+        const ch = s.channel ?? 'unknown';
+        if (!channelGroups[ch]) channelGroups[ch] = [];
+        channelGroups[ch].push(s);
+    });
+
+    if (sessions.length === 0) {
+        return (
+            <div className="tab-content animate-fade-in">
+                <EmptyState
+                    icon={<Radio size={48} />}
+                    title="No active sessions"
+                    description="This agent has no active channel sessions right now."
+                />
+            </div>
+        );
+    }
+
+    return (
+        <div className="tab-content animate-fade-in">
+            <SectionTitle>Active Channel Sessions</SectionTitle>
+            {Object.entries(channelGroups).map(([channel, chSessions]) => {
+                const color = CHANNEL_COLORS[channel] ?? 'var(--primary)';
+                return (
+                    <div key={channel} style={{ marginBottom: '1.25rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.6rem' }}>
+                            <div style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }} />
+                            <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                                {channel}
+                            </span>
+                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>· {chSessions.length} session{chSessions.length > 1 ? 's' : ''}</span>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                            {chSessions.map((s: any) => (
+                                <div key={s.key ?? s.id} style={{
+                                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                    padding: '0.65rem 0.9rem', borderRadius: 'var(--radius-md)',
+                                    background: 'var(--bg-card)', border: '1px solid var(--border)',
+                                }}>
+                                    <div>
+                                        <span style={{ fontFamily: 'monospace', fontSize: '0.82rem', color: color }}>
+                                            {s.key ?? s.peerId ?? s.id}
+                                        </span>
+                                        {s.label && <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginLeft: '0.6rem' }}>{s.label}</span>}
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '1rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                        {s.tokens && <span>{s.tokens.toLocaleString()} tokens</span>}
+                                        {s.updated && <span>{new Date(s.updated).toLocaleTimeString()}</span>}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
+// ─── Tab: Cron Jobs ───────────────────────────────────────────────────────────
+
+function CronTab({ agentName, jobs, onRemove }: {
+    agentName: string;
+    jobs: any[];
+    onRemove: (id: string) => void;
+}) {
+    const STATUS_COLOR: Record<string, string> = { ok: 'var(--success)', error: 'var(--danger)', running: 'var(--warning)' };
+
+    if (jobs.length === 0) {
+        return (
+            <div className="tab-content animate-fade-in">
+                <EmptyState
+                    icon={<Calendar size={48} />}
+                    title="No scheduled tasks"
+                    description={`No cron jobs are currently assigned to agent "${agentName}".`}
+                />
+            </div>
+        );
+    }
+
+    return (
+        <div className="tab-content animate-fade-in">
+            <SectionTitle>Scheduled Tasks — {jobs.length}</SectionTitle>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                {jobs.map((job: any) => (
+                    <div key={job.id} className="glass-panel" style={{ padding: '1rem 1.25rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '0.6rem' }}>
+                            <div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.3rem' }}>
+                                    <span style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                        {job.name ?? job.id}
+                                    </span>
+                                    {job.status && (
+                                        <span style={{
+                                            fontSize: '0.7rem', fontWeight: 700, padding: '0.15rem 0.5rem',
+                                            borderRadius: 'var(--radius-full)', textTransform: 'uppercase',
+                                            background: `${STATUS_COLOR[job.status] ?? 'var(--text-muted)'}18`,
+                                            color: STATUS_COLOR[job.status] ?? 'var(--text-muted)',
+                                        }}>
+                                            {job.status}
+                                        </span>
+                                    )}
+                                </div>
+                                <code style={{ fontSize: '0.78rem', color: 'var(--primary)', background: 'rgba(99,102,241,0.08)', padding: '0.15rem 0.5rem', borderRadius: 'var(--radius-sm)' }}>
+                                    {job.cron}
+                                </code>
+                            </div>
+                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                <button
+                                    className="btn btn-outline"
+                                    style={{ padding: '0.3rem 0.8rem', fontSize: '0.78rem', color: 'var(--danger)', borderColor: 'rgba(239,68,68,0.3)' }}
+                                    onClick={() => onRemove(job.id)}
+                                >
+                                    <Trash2 size={12} /> Remove
+                                </button>
+                            </div>
+                        </div>
+                        {job.prompt && (
+                            <p style={{
+                                fontSize: '0.8rem', color: 'var(--text-muted)',
+                                background: 'rgba(0,0,0,0.2)', padding: '0.5rem 0.75rem',
+                                borderRadius: 'var(--radius-sm)', margin: '0.5rem 0 0',
+                                fontFamily: 'monospace', lineHeight: 1.5,
+                                display: '-webkit-box', WebkitLineClamp: 3,
+                                WebkitBoxOrient: 'vertical', overflow: 'hidden',
+                            }}>
+                                {job.prompt}
+                            </p>
+                        )}
+                        {(job.next || job.last) && (
+                            <div style={{ display: 'flex', gap: '1.5rem', marginTop: '0.6rem' }}>
+                                {job.next && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                        <Clock size={11} style={{ color: 'var(--success)' }} />
+                                        Next: <span style={{ color: 'var(--text-secondary)' }}>{job.next}</span>
+                                    </div>
+                                )}
+                                {job.last && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                        <GitBranch size={11} />
+                                        Last: <span style={{ color: 'var(--text-secondary)' }}>{job.last}</span>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
+
 export function Agents() {
     const [agents, setAgents] = useState<AgentConfig[]>([]);
     const [models, setModels] = useState<string[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [isSaving, setIsSaving] = useState(false);
     const [selectedAgentName, setSelectedAgentName] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<TabType>('overview');
-
-    // Edit Form State
     const [formData, setFormData] = useState<AgentConfig | null>(null);
-    const [availableSkills, setAvailableSkills] = useState<{ native: any[], project: any[] }>({ native: [], project: [] });
-
-    // Details State
+    const [availableSkills, setAvailableSkills] = useState<{ native: any[]; project: any[] }>({ native: [], project: [] });
     const [agentJobs, setAgentJobs] = useState<any[]>([]);
     const [agentMemory, setAgentMemory] = useState<any[]>([]);
-    const [viewingJournal, setViewingJournal] = useState<{ name: string, content: string } | null>(null);
-    const [isCreating, setIsCreating] = useState(false); // Used to show creation mode on the right panel
+    const [agentSessions, setAgentSessions] = useState<any[]>([]);
+    const [isCreating, setIsCreating] = useState(false);
+    const detailsRef = useRef<HTMLDivElement>(null);
+
+    // ── Data fetching ──────────────────────────────────────────────────────
 
     const fetchAgents = async () => {
         try {
@@ -37,71 +750,59 @@ export function Agents() {
         }
     };
 
-    const fetchModels = async () => {
+    const fetchAgentDetails = async (name: string) => {
         try {
-            const data = await api.getModels();
-            setModels(data);
+            const [jobs, memory, sessions] = await Promise.all([
+                api.getAgentJobs(name).catch(() => []),
+                api.getAgentMemory(name).catch(() => []),
+                api.getSessions().then(all => all.filter((s: any) =>
+                    s.key?.includes(`:${name}:`) || s.agent === name
+                )).catch(() => []),
+            ]);
+            setAgentJobs(jobs);
+            setAgentMemory(memory);
+            setAgentSessions(sessions);
         } catch (err) {
-            console.error('Failed to fetch models', err);
-        }
-    };
-
-    const fetchSkills = async () => {
-        try {
-            const data = await api.getSkills();
-            setAvailableSkills(data);
-        } catch (err) {
-            console.error('Failed to fetch skills', err);
+            console.error('Failed to fetch agent details', err);
         }
     };
 
     useEffect(() => {
         fetchAgents();
-        fetchModels();
-        fetchSkills();
+        api.getModels().then(setModels).catch(() => { });
+        api.getSkills().then(setAvailableSkills).catch(() => { });
     }, []);
 
-    // Effect to update formData and fetch details when selected agent changes
     useEffect(() => {
         if (selectedAgentName) {
             const agent = agents.find(a => a.name === selectedAgentName);
             if (agent) {
                 setFormData({ ...agent });
                 fetchAgentDetails(agent.name);
-                setIsCreating(false);
             }
         }
     }, [selectedAgentName, agents]);
 
-    const fetchAgentDetails = async (name: string) => {
-        try {
-            const [jobs, memory] = await Promise.all([
-                api.getAgentJobs(name),
-                api.getAgentMemory(name)
-            ]);
-            setAgentJobs(jobs);
-            setAgentMemory(memory);
-        } catch (err) {
-            console.error('Failed to fetch agent details', err);
-        }
+    // ── Actions ─────────────────────────────────────────────────────────────
+
+    const handleSelectAgent = (name: string) => {
+        setSelectedAgentName(name);
+        setIsCreating(false);
+        setActiveTab('overview');
+        detailsRef.current?.scrollTo({ top: 0 });
     };
 
     const handleCreateNew = () => {
         setSelectedAgentName(null);
         setIsCreating(true);
         setActiveTab('overview');
-        setFormData({
-            name: '',
-            model: 'gemini-2.0-flash',
-            modelCallback: '',
-            fallbackModels: [],
-            allowedPermissions: []
-        });
+        setFormData({ name: '', model: 'gemini-2.0-flash', modelCallback: '', fallbackModels: [], allowedPermissions: [] });
     };
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!formData) return;
+        setIsSaving(true);
         try {
             if (isCreating) {
                 await api.createAgent(formData);
@@ -110,355 +811,232 @@ export function Agents() {
             } else {
                 await api.updateAgent(formData.name, formData);
             }
-            fetchAgents();
-            alert('Agent saved successfully!');
+            await fetchAgents();
         } catch (err: any) {
-            const msg = err.response?.data?.error || err.message || 'Failed to save agent';
-            alert(`Error: ${msg}`);
+            alert(err.response?.data?.error ?? err.message ?? 'Failed to save agent');
+        } finally {
+            setIsSaving(false);
         }
     };
 
     const handleDelete = async (name: string) => {
-        if (!confirm(`Are you sure you want to delete agent "${name}"?`)) return;
+        if (!confirm(`Delete agent "${name}"? This cannot be undone.`)) return;
         try {
             await api.deleteAgent(name);
-            if (selectedAgentName === name) {
-                setSelectedAgentName(null);
-            }
-            fetchAgents();
+            setSelectedAgentName(null);
+            await fetchAgents();
         } catch (err: any) {
-            const msg = err.response?.data?.error || err.message || 'Failed to delete agent';
-            alert(`Error: ${msg}`);
+            alert(err.response?.data?.error ?? err.message ?? 'Failed to delete agent');
         }
     };
 
-    const handleViewJournal = async (agentName: string, filename: string) => {
+    const handleRemoveJob = async (jobId: string) => {
+        if (!selectedAgentName || !confirm('Remove this scheduled task?')) return;
         try {
-            const content = await api.getAgentMemoryContent(agentName, filename);
-            setViewingJournal({ name: filename, content });
-        } catch (err) {
-            alert('Failed to load journal content');
-        }
-    };
-
-    const removeJob = async (agentName: string, jobId: string) => {
-        if (!confirm('Remove this scheduled task?')) return;
-        try {
-            await api.deleteAgentJob(agentName, jobId);
-            const jobs = await api.getAgentJobs(agentName);
+            await api.deleteAgentJob(selectedAgentName, jobId);
+            const jobs = await api.getAgentJobs(selectedAgentName);
             setAgentJobs(jobs);
-        } catch (err) {
+        } catch {
             alert('Failed to remove job');
         }
     };
 
-    const renderTabNavigation = () => (
-        <div className="agent-tabs">
-            <button className={`tab-btn ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}>
-                <Settings size={14} /> Overview
-            </button>
-            <button className={`tab-btn ${activeTab === 'files' ? 'active' : ''}`} onClick={() => setActiveTab('files')} disabled={isCreating}>
-                <FileText size={14} /> Files
-            </button>
-            <button className={`tab-btn ${activeTab === 'tools' ? 'active' : ''}`} onClick={() => setActiveTab('tools')} disabled={isCreating}>
-                <Wrench size={14} /> Tools
-            </button>
-            <button className={`tab-btn ${activeTab === 'skills' ? 'active' : ''}`} onClick={() => setActiveTab('skills')} disabled={isCreating}>
-                <Zap size={14} /> Skills
-            </button>
-            <button className={`tab-btn ${activeTab === 'channels' ? 'active' : ''}`} onClick={() => setActiveTab('channels')} disabled={isCreating}>
-                <Radio size={14} /> Channels
-            </button>
-            <button className={`tab-btn ${activeTab === 'cron' ? 'active' : ''}`} onClick={() => setActiveTab('cron')} disabled={isCreating}>
-                <Calendar size={14} /> Cron Jobs
-            </button>
-        </div>
-    );
+    // ── Render ───────────────────────────────────────────────────────────────
 
-    const renderOverviewTab = () => {
-        if (!formData) return null;
-        return (
-            <div className="tab-content overview-tab animate-fade-in">
-                <form onSubmit={handleSave} className="agent-form">
-                    <div className="form-group flex justify-between items-center bg-darker p-3 rounded">
-                        <div>
-                            <label>Agent Name / Identity</label>
-                            <input
-                                type="text"
-                                className="form-input invisible-input text-lg font-bold"
-                                value={formData.name}
-                                onChange={e => setFormData({ ...formData, name: e.target.value })}
-                                placeholder="e.g. coder-agent"
-                                required
-                                disabled={!isCreating} // Immutable après création
-                            />
-                        </div>
-                        {!isCreating && (
-                            <div className="agent-badge default-badge text-xs">DEFAULT</div>
-                        )}
-                    </div>
+    const TABS: { id: TabType; label: string; icon: React.ReactNode; badge?: number }[] = [
+        { id: 'overview', label: 'Overview', icon: <Settings size={13} /> },
+        { id: 'files', label: 'Files', icon: <FileText size={13} />, badge: agentMemory.length || undefined },
+        { id: 'tools', label: 'Tools', icon: <Wrench size={13} /> },
+        { id: 'skills', label: 'Skills', icon: <Zap size={13} /> },
+        { id: 'channels', label: 'Channels', icon: <Radio size={13} />, badge: agentSessions.length || undefined },
+        { id: 'cron', label: 'Cron Jobs', icon: <Calendar size={13} />, badge: agentJobs.length || undefined },
+    ];
 
-                    <div className="form-row split-form">
-                        <div className="form-group">
-                            <label>Primary Model</label>
-                            <select
-                                className="form-select"
-                                value={formData.model}
-                                onChange={e => setFormData({ ...formData, model: e.target.value })}
-                                required
-                            >
-                                <option value="" disabled>Select a model</option>
-                                {models.map(m => (
-                                    <option key={m} value={m}>{m}</option>
-                                ))}
-                            </select>
-                        </div>
-                        <div className="form-group">
-                            <label>Model Callback (Fallback #1)</label>
-                            <select
-                                className="form-select"
-                                value={formData.modelCallback || ''}
-                                onChange={e => setFormData({ ...formData, modelCallback: e.target.value })}
-                            >
-                                <option value="">No callback</option>
-                                {models.map(m => (
-                                    <option key={m} value={m}>{m}</option>
-                                ))}
-                            </select>
-                        </div>
-                    </div>
-
-                    {!isCreating && (
-                        <div className="form-group mt-2">
-                            <label>Workspace Path</label>
-                            <div className="code-block monospace text-sm">
-                                {formData.baseDir || 'Not specified'}
-                            </div>
-                        </div>
-                    )}
-
-                    <div className="form-actions mt-6 flex justify-end gap-3">
-                        <button type="button" className="btn btn-outline" onClick={() => fetchAgents()}>
-                            <RefreshCw size={14} className="mr-1" /> Reload Config
-                        </button>
-                        <button type="submit" className="btn btn-primary">
-                            <Save size={14} className="mr-1" /> {isCreating ? 'Create' : 'Save'} Configuration
-                        </button>
-                    </div>
-                </form>
-            </div>
-        );
-    };
-
-    const renderFilesTab = () => (
-        <div className="tab-content files-tab animate-fade-in">
-            <p className="text-muted text-sm mb-4">View and edit the context journals and instructions for this agent.</p>
-            <div className="journals-grid">
-                {agentMemory.length > 0 ? agentMemory.map(file => (
-                    <div key={file.name} className="journal-card glass-panel cursor-pointer" onClick={() => handleViewJournal(selectedAgentName!, file.name)}>
-                        <div className="journal-icon">
-                            <FileText size={24} className="text-primary" />
-                        </div>
-                        <div className="journal-info">
-                            <h4>{file.name}</h4>
-                            <span className="text-xs text-muted">{(file.size / 1024).toFixed(1)} KB</span>
-                        </div>
-                    </div>
-                )) : <p className="text-muted text-sm">No files found in workspace.</p>}
-            </div>
-        </div>
-    );
-
-    const renderSkillsTab = () => {
-        if (!formData) return null;
-        return (
-            <div className="tab-content skills-tab animate-fade-in">
-                <p className="text-muted text-sm mb-4">Assign granular skills and tools to this agent instance.</p>
-                <div className="skills-selectors-grid">
-                    <div className="skill-category glass-panel p-4">
-                        <h5 className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: 'var(--text-muted)' }}>🛠️ Native (Gemini CLI)</h5>
-                        <div className="checkbox-group mt-3">
-                            {availableSkills.native.map(skill => (
-                                <label key={skill.name} className="checkbox-label" title={skill.description}>
-                                    <input
-                                        type="checkbox"
-                                        checked={formData.allowedPermissions?.includes(skill.name)}
-                                        onChange={async (e) => {
-                                            const perms = formData.allowedPermissions || [];
-                                            const newPerms = e.target.checked ? [...perms, skill.name] : perms.filter(p => p !== skill.name);
-                                            setFormData({ ...formData, allowedPermissions: newPerms });
-                                            // Auto save on toggle
-                                            await api.updateAgent(formData.name, { ...formData, allowedPermissions: newPerms });
-                                            fetchAgents();
-                                        }}
-                                    />
-                                    <span className="checkbox-text font-medium">{skill.name}</span>
-                                    <span className="skill-desc truncate text-xs text-muted ml-2">{skill.description}</span>
-                                </label>
-                            ))}
-                        </div>
-                    </div>
-
-                    <div className="skill-category glass-panel p-4">
-                        <h5 className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: 'var(--text-muted)' }}>🧩 Project Skills (Internal)</h5>
-                        <div className="checkbox-group mt-3">
-                            {availableSkills.project.map(skill => (
-                                <label key={skill.name} className="checkbox-label" title={skill.description}>
-                                    <input
-                                        type="checkbox"
-                                        checked={formData.allowedPermissions?.includes(skill.name)}
-                                        onChange={async (e) => {
-                                            const perms = formData.allowedPermissions || [];
-                                            const newPerms = e.target.checked ? [...perms, skill.name] : perms.filter(p => p !== skill.name);
-                                            setFormData({ ...formData, allowedPermissions: newPerms });
-                                            // Auto save on toggle
-                                            await api.updateAgent(formData.name, { ...formData, allowedPermissions: newPerms });
-                                            fetchAgents();
-                                        }}
-                                    />
-                                    <span className="checkbox-text font-medium">{skill.name}</span>
-                                    <span className="skill-desc truncate text-xs text-muted ml-2">{skill.description}</span>
-                                </label>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            </div>
-        );
-    };
-
-    const renderCronTab = () => (
-        <div className="tab-content cron-tab animate-fade-in">
-            <p className="text-muted text-sm mb-4">Scheduled jobs relying on this agent's identity.</p>
-            <div className="jobs-list">
-                {agentJobs.length > 0 ? agentJobs.map(job => (
-                    <div key={job.id} className="job-item glass-panel flex justify-between items-center p-3 mb-2">
-                        <div>
-                            <code className="text-xs bg-dark px-2 py-1 rounded text-primary">{job.cron}</code>
-                            <p className="text-sm mt-1">{job.prompt}</p>
-                        </div>
-                        <button className="icon-btn text-danger flex items-center gap-1" onClick={() => removeJob(selectedAgentName!, job.id)}>
-                            <Trash2 size={14} /> Remove
-                        </button>
-                    </div>
-                )) : <p className="text-muted text-sm italic">No active cron tasks assigned to this agent.</p>}
-            </div>
-        </div>
-    );
-
-    const renderPlaceholderTab = (name: string) => (
-        <div className="tab-content placeholder-tab animate-fade-in flex flex-col items-center justify-center p-10 text-center">
-            <div className="opacity-50 mb-3"><Bot size={48} /></div>
-            <h3>{name} Configuration</h3>
-            <p className="text-muted text-sm max-w-sm mt-2">This configuration panel is available but currently acts globally based on gateway rules.</p>
-        </div>
-    );
+    const selectedAgent = agents.find(a => a.name === selectedAgentName);
 
     return (
         <div className="page-container agents-page">
+            {/* ── Page header ─────────────────────────────── */}
+            <div className="page-header" style={{ marginBottom: '0' }}>
+                <h1>Agents</h1>
+                <p>Manage agent workspaces, tools, and identities.</p>
+            </div>
+
+            {/* ── Split layout ─────────────────────────────── */}
             <div className="agents-split-layout">
-                {/* Left Column: Agent List */}
+
+                {/* Left: agent list */}
                 <div className="agents-navigation glass-panel">
                     <div className="nav-header flex justify-between items-center p-3 border-b">
-                        <span className="font-bold text-sm uppercase tracking-wider text-muted">Agents ({agents.length})</span>
-                        <button className="icon-btn btn-primary" style={{ padding: '0.2rem' }} onClick={handleCreateNew} title="New Agent">
-                            <Plus size={16} />
+                        <span className="font-bold text-sm uppercase tracking-wider text-muted">
+                            Agents ({agents.length})
+                        </span>
+                        <button
+                            className="icon-btn btn-primary"
+                            style={{ padding: '0.25rem 0.5rem', display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.8rem' }}
+                            onClick={handleCreateNew}
+                            title="New Agent"
+                        >
+                            <Plus size={14} /> New
                         </button>
                     </div>
+
                     <div className="agents-list">
                         {isLoading ? (
-                            <div className="flex justify-center p-4"><RefreshCw className="animate-spin text-primary" size={20} /></div>
+                            <div className="flex justify-center p-4">
+                                <RefreshCw className="animate-spin" style={{ color: 'var(--primary)' }} size={20} />
+                            </div>
                         ) : (
-                            <>
-                                {agents.map(agent => (
-                                    <div
-                                        key={agent.name}
-                                        className={`agent-nav-item ${selectedAgentName === agent.name && !isCreating ? 'active' : ''}`}
-                                        onClick={() => {
-                                            setSelectedAgentName(agent.name);
-                                            setIsCreating(false);
-                                        }}
-                                    >
-                                        <div className="agent-avatar bg-primary-dim text-primary font-bold">
-                                            {agent.name.charAt(0).toUpperCase()}
-                                        </div>
-                                        <div className="agent-nav-info overflow-hidden">
-                                            <h4 className="truncate">{agent.name}</h4>
-                                            <span className="text-xs text-muted truncate">{agent.model}</span>
-                                        </div>
-                                        {agent.name === 'main' && <span className="text-[10px] bg-dark text-muted px-1 rounded uppercase font-bold ml-auto">Def</span>}
+                            agents.map(agent => (
+                                <div
+                                    key={agent.name}
+                                    className={`agent-nav-item ${selectedAgentName === agent.name && !isCreating ? 'active' : ''}`}
+                                    onClick={() => handleSelectAgent(agent.name)}
+                                >
+                                    <div className="agent-avatar bg-primary-dim" style={{ color: 'var(--primary)', fontWeight: 700, fontSize: '0.95rem' }}>
+                                        {agent.name.charAt(0).toUpperCase()}
                                     </div>
-                                ))}
-                            </>
+                                    <div className="agent-nav-info overflow-hidden">
+                                        <h4 style={{ fontSize: '0.9rem', fontWeight: 600 }} className="truncate">{agent.name}</h4>
+                                        <span className="text-xs truncate" style={{ color: 'var(--text-muted)', fontFamily: 'monospace' }}>{agent.model}</span>
+                                    </div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.25rem', flexShrink: 0 }}>
+                                        {agent.name === 'main' && (
+                                            <span style={{ fontSize: '0.65rem', background: 'rgba(99,102,241,0.12)', color: 'var(--primary)', padding: '0.1rem 0.4rem', borderRadius: 'var(--radius-full)', fontWeight: 700, textTransform: 'uppercase' }}>
+                                                Default
+                                            </span>
+                                        )}
+                                        {agent.status && <StatusBadge status={agent.status} />}
+                                    </div>
+                                </div>
+                            ))
                         )}
+
                         {isCreating && (
                             <div className="agent-nav-item active creating">
-                                <div className="agent-avatar bg-accent-dim text-accent"><Plus size={16} /></div>
+                                <div className="agent-avatar bg-accent-dim" style={{ color: 'var(--success)' }}>
+                                    <Plus size={16} />
+                                </div>
                                 <div className="agent-nav-info">
-                                    <h4>New Agent</h4>
-                                    <span className="text-xs text-muted">Unsaved</span>
+                                    <h4 style={{ fontSize: '0.9rem' }}>New Agent</h4>
+                                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Unsaved</span>
                                 </div>
                             </div>
                         )}
                     </div>
                 </div>
 
-                {/* Right Column: Agent Details */}
+                {/* Right: detail panel */}
                 <div className="agent-details-panel glass-panel">
-                    {(selectedAgentName || isCreating) ? (
+                    {(selectedAgentName || isCreating) && formData ? (
                         <>
-                            <div className="details-header p-4 border-b flex justify-between items-end bg-darker">
+                            {/* Detail header */}
+                            <div className="details-header p-4 flex justify-between items-end" style={{ background: 'rgba(0,0,0,0.15)', borderBottom: '1px solid var(--border)' }}>
                                 <div>
-                                    <h2 className="text-2xl font-bold mb-1">
-                                        {isCreating ? 'Create New Agent' : selectedAgentName}
-                                    </h2>
-                                    <p className="text-sm text-muted m-0">
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.25rem' }}>
+                                        <h2 style={{ fontSize: '1.4rem', fontWeight: 700, margin: 0 }}>
+                                            {isCreating ? 'Create New Agent' : selectedAgentName}
+                                        </h2>
+                                        {!isCreating && selectedAgent?.name === 'main' && (
+                                            <span style={{ fontSize: '0.7rem', fontWeight: 700, background: 'rgba(99,102,241,0.12)', color: 'var(--primary)', padding: '0.2rem 0.6rem', borderRadius: 'var(--radius-full)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                                                Default
+                                            </span>
+                                        )}
+                                        {!isCreating && selectedAgent?.status && <StatusBadge status={selectedAgent.status} />}
+                                    </div>
+                                    <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: 0 }}>
                                         {isCreating ? 'Configure identity and basic routing.' : 'Agent workspace and routing configuration.'}
+                                        {!isCreating && selectedAgent?.model && (
+                                            <span style={{ color: 'var(--primary)', marginLeft: '0.4rem', fontFamily: 'monospace' }}>
+                                                · {selectedAgent.model}
+                                                {(selectedAgent.fallbackModels?.length ?? 0) > 0 && ` (+${selectedAgent.fallbackModels!.length} fallback${selectedAgent.fallbackModels!.length > 1 ? 's' : ''})`}
+                                            </span>
+                                        )}
                                     </p>
                                 </div>
                                 {!isCreating && selectedAgentName && (
-                                    <button className="icon-btn text-danger flex items-center gap-1 text-sm bg-dark px-2 py-1 rounded hover-bg-danger hover-text-white transition" onClick={() => handleDelete(selectedAgentName)}>
-                                        <Trash2 size={14} /> Delete Agent
+                                    <button
+                                        className="btn"
+                                        style={{ padding: '0.4rem 0.8rem', fontSize: '0.82rem', color: 'var(--danger)', border: '1px solid rgba(239,68,68,0.3)', background: 'transparent', display: 'flex', alignItems: 'center', gap: '0.4rem', borderRadius: 'var(--radius-md)' }}
+                                        onClick={() => handleDelete(selectedAgentName)}
+                                    >
+                                        <Trash2 size={13} /> Delete Agent
                                     </button>
                                 )}
                             </div>
 
-                            {renderTabNavigation()}
+                            {/* Tab navigation */}
+                            <div className="agent-tabs">
+                                {TABS.map(tab => (
+                                    <button
+                                        key={tab.id}
+                                        className={`tab-btn ${activeTab === tab.id ? 'active' : ''}`}
+                                        onClick={() => setActiveTab(tab.id)}
+                                        disabled={isCreating && tab.id !== 'overview'}
+                                    >
+                                        {tab.icon}
+                                        {tab.label}
+                                        {tab.badge !== undefined && tab.badge > 0 && (
+                                            <span style={{
+                                                fontSize: '0.65rem', fontWeight: 700, minWidth: '16px', height: '16px',
+                                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                                background: 'rgba(99,102,241,0.15)', color: 'var(--primary)',
+                                                borderRadius: 'var(--radius-full)', padding: '0 0.35rem',
+                                            }}>
+                                                {tab.badge}
+                                            </span>
+                                        )}
+                                    </button>
+                                ))}
+                            </div>
 
-                            <div className="details-content-area p-5">
-                                {activeTab === 'overview' && renderOverviewTab()}
-                                {activeTab === 'files' && renderFilesTab()}
-                                {activeTab === 'tools' && renderPlaceholderTab('Tools & Capabilities')}
-                                {activeTab === 'skills' && renderSkillsTab()}
-                                {activeTab === 'channels' && renderPlaceholderTab('Routing Channels')}
-                                {activeTab === 'cron' && renderCronTab()}
+                            {/* Tab content */}
+                            <div className="details-content-area p-5" ref={detailsRef}>
+                                {activeTab === 'overview' && (
+                                    <OverviewTab
+                                        formData={formData}
+                                        setFormData={setFormData}
+                                        models={models}
+                                        isCreating={isCreating}
+                                        onSave={handleSave}
+                                        onReload={fetchAgents}
+                                        isSaving={isSaving}
+                                    />
+                                )}
+                                {activeTab === 'files' && (
+                                    <FilesTab
+                                        agentName={selectedAgentName!}
+                                        memory={agentMemory}
+                                    />
+                                )}
+                                {activeTab === 'tools' && (
+                                    <ToolsTab agent={formData} />
+                                )}
+                                {activeTab === 'skills' && (
+                                    <SkillsTab availableSkills={availableSkills} agent={formData} />
+                                )}
+                                {activeTab === 'channels' && (
+                                    <ChannelsTab sessions={agentSessions} />
+                                )}
+                                {activeTab === 'cron' && (
+                                    <CronTab
+                                        agentName={selectedAgentName!}
+                                        jobs={agentJobs}
+                                        onRemove={handleRemoveJob}
+                                    />
+                                )}
                             </div>
                         </>
                     ) : (
-                        <div className="empty-state flex flex-col items-center justify-center h-full text-center text-muted p-10">
-                            <Bot size={64} className="mb-4 opacity-20" />
-                            <h3>No Agent Selected</h3>
-                            <p className="text-sm max-w-sm mt-2">Select an agent from the list to view and edit its configuration, or create a new one.</p>
-                        </div>
+                        <EmptyState
+                            icon={<Bot size={64} />}
+                            title="No Agent Selected"
+                            description="Select an agent from the list to view and edit its configuration, or create a new one."
+                        />
                     )}
                 </div>
             </div>
 
-            {viewingJournal && (
-                <div className="modal-overlay z-50">
-                    <div className="modal-content glass-panel" style={{ maxWidth: '800px', width: '90%' }}>
-                        <div className="modal-header">
-                            <h2>Journal: {viewingJournal.name}</h2>
-                            <button className="close-btn" onClick={() => setViewingJournal(null)}>
-                                <X size={20} />
-                            </button>
-                        </div>
-                        <div className="modal-body bg-dark" style={{ maxHeight: '70vh', overflowY: 'auto', padding: '1rem' }}>
-                            <pre className="text-sm monospace whitespace-pre-wrap text-muted">{viewingJournal.content}</pre>
-                        </div>
-                    </div>
-                </div>
-            )}
         </div>
     );
 }

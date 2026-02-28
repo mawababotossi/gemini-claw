@@ -118,9 +118,11 @@ CRITICAL: You are an autonomous agent running within the GeminiClaw platform.
         }
 
         const files = [
-            { name: 'AGENTS.md', label: 'agent_instructions' },
-            { name: 'USER.md', label: 'user_context' },
+            { name: 'IDENTITY.md', label: 'agent_identity' },
             { name: 'SOUL.md', label: 'agent_soul' },
+            { name: 'AGENTS.md', label: 'agent_instructions' },
+            { name: 'TOOLS.md', label: 'tools_notes' },
+            { name: 'USER.md', label: 'user_context' },
             { name: 'MEMORY.md', label: 'agent_memory' },
             { name: 'HEARTBEAT.md', label: 'heartbeat_instructions' }
         ];

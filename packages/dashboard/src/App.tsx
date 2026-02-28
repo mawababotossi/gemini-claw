@@ -7,9 +7,9 @@ function App() {
     <BrowserRouter>
       <div className="flex" style={{ minHeight: '100vh', width: '100%' }}>
         <Sidebar />
-        <main style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+        <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
           <TopBar />
-          <div style={{ flex: 1 }}>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/agents" element={<Agents />} />
