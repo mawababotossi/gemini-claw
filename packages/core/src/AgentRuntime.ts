@@ -24,6 +24,9 @@ export class AgentRuntime extends EventEmitter {
     private dynamicJobs: Map<string, { cron: Cron, prompt: string }> = new Map();
     private nextJobId = 1;
     private sessionTypingThrottle: Map<string, number> = new Map();
+    private bridgeLastUsed: Map<string, number> = new Map();
+    private readonly BRIDGE_IDLE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+    private gcInterval?: any;
 
     constructor(
         config: AgentConfig,
@@ -46,6 +49,9 @@ export class AgentRuntime extends EventEmitter {
 
         // Load persisted dynamic jobs
         this.loadDynamicJobs();
+
+        // Start Bridge GC
+        this.startBridgeGC();
     }
 
     getConfig(): AgentConfig {
@@ -65,6 +71,7 @@ export class AgentRuntime extends EventEmitter {
             });
             this.bridges.set(userSessionId, bridge);
         }
+        this.bridgeLastUsed.set(userSessionId, Date.now());
         return bridge;
     }
 
@@ -255,7 +262,7 @@ CRITICAL: You are an autonomous agent running within the GeminiClaw platform.
                 }
 
                 // Clear session map to create new sessions for the fallback model
-                this.sessionMap.clear();
+
 
                 const fbBridge = new ACPBridge(
                     fallbackModel,
@@ -409,7 +416,6 @@ ${systemPrompt}
         this.heartbeatJob = new Cron(pattern, loop);
         console.log(`[core/runtime] Scheduled heartbeat for ${this.config.name} with pattern: ${pattern}`);
     }
-
     async shutdown(): Promise<void> {
         if (this.heartbeatJob) {
             this.heartbeatJob.stop();
@@ -420,11 +426,16 @@ ${systemPrompt}
         }
         this.dynamicJobs.clear();
 
+        if (this.gcInterval) {
+            clearInterval(this.gcInterval);
+        }
+
         for (const bridge of this.bridges.values()) {
             bridge.stop();
         }
         this.bridges.clear();
         this.sessionMap.clear();
+        this.bridgeLastUsed.clear();
     }
 
     /**
@@ -507,6 +518,26 @@ ${systemPrompt}
 
         if (persist) this.saveDynamicJobs();
         return id;
+    }
+
+    private startBridgeGC(): void {
+        this.gcInterval = setInterval(() => {
+            const now = Date.now();
+            for (const [sessionId, lastUsed] of this.bridgeLastUsed.entries()) {
+                // Don't GC internal sessions like heartbeat unless they are really old or we want to keep them
+                // Actually heartbeat runs every few minutes, so it will keep itself alive.
+                if (now - lastUsed > this.BRIDGE_IDLE_TTL_MS) {
+                    const bridge = this.bridges.get(sessionId);
+                    if (bridge) {
+                        console.log(`[core/runtime] Closing idle bridge for session "${sessionId}"`);
+                        bridge.stop();
+                        this.bridges.delete(sessionId);
+                        this.sessionMap.delete(sessionId);
+                        this.bridgeLastUsed.delete(sessionId);
+                    }
+                }
+            }
+        }, 5 * 60 * 1000); // Check every 5 minutes
     }
 
     public removeDynamicJob(id: string): boolean {

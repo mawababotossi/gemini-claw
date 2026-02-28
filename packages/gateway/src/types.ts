@@ -30,4 +30,5 @@ export interface GatewayConfig {
     channels: Record<string, ChannelConfig>;
     cron?: CronJob[];
     gatewayPort?: number;
+    ownerWebChatClientId?: string;
 }

@@ -8,5 +8,6 @@ data/
 .DS_Store
 *.log
 
-# WhatsApp session files
-packages/channels/whatsapp/auth_info_baileys/
+# Build artifacts
+build_dist/
+*.tmp

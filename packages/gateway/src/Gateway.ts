@@ -665,7 +665,10 @@ export class Gateway implements IGateway {
     }
 
     private isOwner(channel: string, peerId: string, metadata?: Record<string, any>): boolean {
-        if (channel === 'webchat') return metadata?.isOwner === true;
+        if (channel === 'webchat') {
+            const configuredOwnerId = this.config.ownerWebChatClientId;
+            return !!configuredOwnerId && peerId === configuredOwnerId;
+        }
         if (channel === 'whatsapp') {
             const ownerJid = this.getOwnerJid();
             if (!ownerJid) return false;

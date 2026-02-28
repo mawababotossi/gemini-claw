@@ -101,7 +101,10 @@ async function main(): Promise<void> {
     const cors = (await import('cors')).default;
     const app = express();
 
-    app.use(cors());
+    app.use(cors({
+        origin: process.env['DASHBOARD_ORIGIN'] ?? 'http://localhost:5173',
+        credentials: true,
+    }));
 
     // Explicitly skip parsing for MCP POST route so SSEServerTransport can read the raw stream
     app.use((req, res, next) => {
@@ -117,6 +120,7 @@ async function main(): Promise<void> {
     app.use('/api/config', requireApiToken);
     app.use('/api/channels', requireApiToken);
     app.use('/api/transcripts', requireApiToken);
+    app.use('/api/sessions', requireApiToken);
     app.use('/api/logs', requireApiToken);
 
     // Enable MCP SSE transport
