@@ -76,7 +76,7 @@ export class AgentRuntime extends EventEmitter {
         return bridge;
     }
 
-    private async getSessionId(userSessionId: string, bridge: ACPBridge): Promise<string> {
+    private async getSessionId(userSessionId: string, bridge: ACPBridge, mcpServers: any[] = []): Promise<string> {
         if (!this.sessionMap.has(userSessionId)) {
             let cwd = process.cwd();
             if (this.config.baseDir) {
