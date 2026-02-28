@@ -30,7 +30,7 @@
         {
             "name": "main",
             "model": "gemini-3-flash-preview",
-            "modelCallback": "gemini-2.0-flash",
+            "modelCallback": "gemini-3-1-pro-preview",
             "fallbackModels": [
                 "gemini-1.5-pro"
             ],
@@ -47,6 +47,40 @@
                 }
             ],
             "baseDir": "../../data/agents/main"
+        },
+        {
+            "name": "scipro",
+            "model": "gemini-3-1-pro-preview",
+            "modelCallback": "gemini-3-flash-preview",
+            "heartbeat": {
+                "enabled": true,
+                "intervalMinutes": 120
+            },
+            "mcpServers": [
+                {
+                    "name": "geminiclaw-skills",
+                    "type": "sse",
+                    "url": "http://localhost:3002/api/mcp/messages",
+                    "headers": []
+                }
+            ],
+            "baseDir": "../../data/agents/scipro"
+        },
+        {
+            "name": "viral-writer",
+            "model": "gemini-3-flash-preview",
+            "heartbeat": {
+                "enabled": false
+            },
+            "mcpServers": [
+                {
+                    "name": "geminiclaw-skills",
+                    "type": "sse",
+                    "url": "http://localhost:3002/api/mcp/messages",
+                    "headers": []
+                }
+            ],
+            "baseDir": "../../data/agents/viral-writer"
         }
     ],
     "channels": {

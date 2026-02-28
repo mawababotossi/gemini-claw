@@ -44,12 +44,23 @@ export class AgentRegistry {
             fs.mkdirSync(workspaceDir, { recursive: true });
         }
 
+        const memoryDir = path.join(baseDir, 'memory');
+        if (!fs.existsSync(memoryDir)) {
+            fs.mkdirSync(memoryDir, { recursive: true });
+        }
+
         const defaultFiles = [
             { name: 'AGENTS.md', content: '# Agent personality and instructions\n' },
             { name: 'USER.md', content: '# Instructions on user interaction\n' },
             { name: 'SOUL.md', content: '# The core essence of the agent\n' },
-            { name: 'MEMORY.md', content: '# Agent Long-Term Memory\n' },
-            { name: 'HEARTBEAT.md', content: '# Heartbeat Instructions\nDescribe here what the agent should check autonomously.\nIf everything is fine and there is no need to disturb the user, reply EXACTLY with: HEARTBEAT_OK\n' }
+            { name: 'MEMORY.md', content: '# Agent Long-Term Memory (Distilled)\n' },
+            {
+                name: 'HEARTBEAT.md', content: '# Heartbeat & Distillation Instructions\n' +
+                    '1. Check logs and system state.\n' +
+                    '2. Review recent journal entries in the memory/ directory.\n' +
+                    '3. Distill important facts, user preferences, or project updates into MEMORY.md.\n' +
+                    'If everything is fine and there is no need to disturb the user, reply EXACTLY with: HEARTBEAT_OK\n'
+            }
         ];
 
         for (const file of defaultFiles) {

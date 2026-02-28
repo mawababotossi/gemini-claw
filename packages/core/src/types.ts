@@ -21,11 +21,14 @@ export interface AgentConfig {
     mcpServers?: any[];
     /** Base directory for agent-specific files (AGENTS.md, USER.md, SOUL.md, workspace/) */
     baseDir?: string;
-    /** Proactive heartbeat configuration */
+    /** Proactive heartbeat/distillation configuration */
     heartbeat?: {
         enabled: boolean;
-        intervalMinutes: number;
+        intervalMinutes?: number;
+        cron?: string;
     };
+    /** Whitelist of granted permissions (run_shell_command, write_file, read_file, network) */
+    allowedPermissions?: string[];
 }
 
 export interface ProviderConfig {
@@ -48,7 +51,13 @@ export interface RuntimeConfig {
     agents: AgentConfig[];
 }
 
+export type ActivityType = 'typing' | 'paused';
+
 export interface IGateway {
-    registerChannel(channel: string, sendCallback: (peerId: string, text: string) => Promise<void>): void;
+    registerChannel(
+        channel: string,
+        sendCallback: (peerId: string, text: string) => Promise<void>,
+        activityCallback?: (peerId: string, type: ActivityType) => Promise<void>
+    ): void;
     ingest(channel: string, peerId: string, text: string, attachments?: any[], metadata?: Record<string, any>): Promise<void>;
 }

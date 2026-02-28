@@ -10,6 +10,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { Response } from 'express';
+import { requireApiToken } from './middleware/apiAuth.js';
 
 // --- Log Interception ---
 const logClients = new Set<Response>();
@@ -110,6 +111,14 @@ async function main(): Promise<void> {
         express.json()(req, res, next);
     });
 
+    // Protect all /api routes except MCP (which manages its own auth via gemini-cli)
+    // and status (optional, but good for health checks)
+    app.use('/api/agents', requireApiToken);
+    app.use('/api/config', requireApiToken);
+    app.use('/api/channels', requireApiToken);
+    app.use('/api/transcripts', requireApiToken);
+    app.use('/api/logs', requireApiToken);
+
     // Enable MCP SSE transport
 
     app.get('/api/mcp/messages', async (req, res) => {
@@ -190,6 +199,39 @@ async function main(): Promise<void> {
         }
     });
 
+    // API: Global Config
+    app.get('/api/config/global', (req, res) => {
+        res.json(gateway.getGlobalConfig());
+    });
+
+    // API: Project Config
+    app.get('/api/config/project', (req, res) => {
+        res.json(gateway.getProjectConfig());
+    });
+
+    app.put('/api/config/project', async (req, res) => {
+        try {
+            await gateway.updateProjectConfig(req.body);
+            res.json({ success: true });
+        } catch (err: any) {
+            res.status(400).json({ error: err.message });
+        }
+    });
+
+    // API: Providers Config
+    app.get('/api/config/providers', (req, res) => {
+        res.json(gateway.getProviders());
+    });
+
+    app.put('/api/config/providers', async (req, res) => {
+        try {
+            await gateway.updateProviders(req.body);
+            res.json({ success: true });
+        } catch (err: any) {
+            res.status(400).json({ error: err.message });
+        }
+    });
+
     // API: Get transcript
     app.get('/api/transcripts/:channel/:peerId', (req, res) => {
         const { channel, peerId } = req.params;
@@ -236,6 +278,69 @@ async function main(): Promise<void> {
             res.json({ success: true });
         } catch (err: any) {
             res.status(400).json({ error: err.message });
+        }
+    });
+
+    // API: List agent dynamic jobs
+    app.get('/api/agents/:name/jobs', (req, res) => {
+        try {
+            const runtime = gateway.registry.get(req.params.name);
+            res.json(runtime.listDynamicJobs());
+        } catch (err: any) {
+            res.status(404).json({ error: err.message });
+        }
+    });
+
+    // API: Delete agent dynamic job
+    app.delete('/api/agents/:name/jobs/:jobId', (req, res) => {
+        try {
+            const runtime = gateway.registry.get(req.params.name);
+            const success = runtime.removeDynamicJob(req.params.jobId);
+            res.json({ success });
+        } catch (err: any) {
+            res.status(400).json({ error: err.message });
+        }
+    });
+
+    // API: List agent memory journals
+    app.get('/api/agents/:name/memory', (req, res) => {
+        try {
+            const runtime = gateway.registry.get(req.params.name);
+            const baseDir = runtime.getConfig().baseDir;
+            if (!baseDir) return res.json([]);
+
+            const memoryDir = path.join(baseDir, 'memory');
+            if (!fs.existsSync(memoryDir)) return res.json([]);
+
+            const files = fs.readdirSync(memoryDir)
+                .filter(f => f.endsWith('.md'))
+                .sort()
+                .reverse()
+                .map(f => ({
+                    name: f,
+                    size: fs.statSync(path.join(memoryDir, f)).size,
+                    mtime: fs.statSync(path.join(memoryDir, f)).mtime
+                }));
+            res.json(files);
+        } catch (err: any) {
+            res.status(404).json({ error: err.message });
+        }
+    });
+
+    // API: Read agent memory journal content
+    app.get('/api/agents/:name/memory/:filename', (req, res) => {
+        try {
+            const runtime = gateway.registry.get(req.params.name);
+            const baseDir = runtime.getConfig().baseDir;
+            if (!baseDir) throw new Error('No base directory');
+
+            const filePath = path.join(baseDir, 'memory', req.params.filename);
+            if (!fs.existsSync(filePath)) throw new Error('File not found');
+
+            const content = fs.readFileSync(filePath, 'utf8');
+            res.json({ content });
+        } catch (err: any) {
+            res.status(404).json({ error: err.message });
         }
     });
 

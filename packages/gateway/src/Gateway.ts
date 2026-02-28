@@ -14,7 +14,7 @@ import type {
 } from '@geminiclaw/memory';
 import { SessionStore, TranscriptStore } from '@geminiclaw/memory';
 import { AgentRegistry } from '@geminiclaw/core';
-import type { AgentConfig, IGateway } from '@geminiclaw/core';
+import type { AgentConfig, IGateway, ActivityType, ProjectConfig, ProviderConfig } from '@geminiclaw/core';
 import { SkillMcpServer, SkillRegistry, type Skill } from '@geminiclaw/skills';
 import { Type } from '@google/genai';
 import fs from 'node:fs';
@@ -25,15 +25,17 @@ import type { GatewayConfig, ChannelConfig } from './types.js';
 
 /** Channel adapters register a send callback so the gateway can reply */
 export type SendCallback = (peerId: string, text: string, thought?: string) => Promise<void>;
+export type ActivityCallback = (peerId: string, type: ActivityType) => Promise<void>;
 
 export class Gateway implements IGateway {
     private sessions: SessionStore;
     private transcripts: TranscriptStore;
-    private registry: AgentRegistry;
+    public registry: AgentRegistry;
     private skillRegistry: SkillRegistry;
     public mcpServer: SkillMcpServer;
     private queue: MessageQueue;
     private sendCallbacks = new Map<string, SendCallback>();
+    private activityCallbacks = new Map<string, ActivityCallback>();
     private channelConfigs: Record<string, ChannelConfig> = {};
 
     constructor(private config: GatewayConfig) {
@@ -101,7 +103,28 @@ export class Gateway implements IGateway {
                     });
                 }
             });
+
+            runtime.on('agent_typing', async (data: { sessionId: string }) => {
+                const session = this.sessions.get(data.sessionId);
+                console.log(`[gateway-debug] agent_typing event for session ${data.sessionId}, channel=${session?.channel}`);
+                if (session && this.activityCallbacks.has(session.channel)) {
+                    console.log(`[gateway-debug] Calling activityCallback for peer ${session.peerId}`);
+                    await this.activityCallbacks.get(session.channel)!(session.peerId, 'typing');
+                }
+            });
         }
+    }
+
+    registerChannel(
+        channel: string,
+        sendCallback: SendCallback,
+        activityCallback?: ActivityCallback
+    ): void {
+        this.sendCallbacks.set(channel, sendCallback);
+        if (activityCallback) {
+            this.activityCallbacks.set(channel, activityCallback);
+        }
+        console.log(`[gateway] Registered channel: ${channel}`);
     }
 
     private registerBuiltinSkills() {
@@ -230,19 +253,146 @@ export class Gateway implements IGateway {
             }
         };
 
+        const delegateTaskSkill: Skill = {
+            name: 'delegate_task',
+            description: 'Delegate a complex task to another AI agent. Use this to leverage specialized agents.',
+            parameters: {
+                type: Type.OBJECT,
+                properties: {
+                    agentName: {
+                        type: Type.STRING,
+                        description: 'The name of the agent to delegate to (e.g., "main", "researcher").',
+                    },
+                    task: {
+                        type: Type.STRING,
+                        description: 'The prompt or task description to send to the other agent.',
+                    },
+                },
+                required: ['agentName', 'task'],
+            },
+            execute: async (args) => {
+                const targetAgent = args.agentName as string;
+                const task = args.task as string;
+
+                try {
+                    const runtime = this.registry.get(targetAgent);
+                    // We create a "virtual" message for the delegation
+                    const response = await runtime.processMessage({
+                        sessionId: `delegation_${Date.now()}`,
+                        channel: 'gateway-internal',
+                        peerId: 'supervisor',
+                        text: task,
+                        timestamp: Date.now()
+                    });
+
+                    return {
+                        success: true,
+                        agent: targetAgent,
+                        response: response.text,
+                        thought: response.thought
+                    };
+                } catch (err: any) {
+                    throw new Error(`Delegation to ${targetAgent} failed: ${err.message}`);
+                }
+            }
+        };
+
+        const scheduleTaskSkill: Skill = {
+            name: 'schedule_task',
+            description: 'Schedule a recurring task for yourself using a cron expression.',
+            parameters: {
+                type: Type.OBJECT,
+                properties: {
+                    agentName: {
+                        type: Type.STRING,
+                        description: 'The name of your agent (usually "main").'
+                    },
+                    cron: {
+                        type: Type.STRING,
+                        description: 'A standard cron expression (e.g., "0 8 * * *" for every morning at 8am).'
+                    },
+                    prompt: {
+                        type: Type.STRING,
+                        description: 'The prompt to execute at the scheduled time.'
+                    }
+                },
+                required: ['agentName', 'cron', 'prompt']
+            },
+            execute: async (args) => {
+                const agentName = args.agentName as string;
+                const cron = args.cron as string;
+                const prompt = args.prompt as string;
+                const runtime = this.registry.get(agentName);
+                const id = runtime.addDynamicJob(cron, prompt);
+                return { success: true, jobId: id, message: `Task scheduled with pattern: ${cron}` };
+            }
+        };
+
+        const listTasksSkill: Skill = {
+            name: 'list_tasks',
+            description: 'List all your active scheduled recurring tasks.',
+            parameters: {
+                type: Type.OBJECT,
+                properties: {
+                    agentName: { type: Type.STRING, description: 'The name of your agent.' }
+                },
+                required: ['agentName']
+            },
+            execute: async (args) => {
+                const agentName = args.agentName as string;
+                const runtime = this.registry.get(agentName);
+                return { tasks: runtime.listDynamicJobs() };
+            }
+        };
+
+        const removeTaskSkill: Skill = {
+            name: 'remove_task',
+            description: 'Remove a scheduled recurring task by its ID.',
+            parameters: {
+                type: Type.OBJECT,
+                properties: {
+                    agentName: { type: Type.STRING, description: 'The name of your agent.' },
+                    jobId: { type: Type.STRING, description: 'The ID of the job to remove (e.g., "job_1").' }
+                },
+                required: ['agentName', 'jobId']
+            },
+            execute: async (args) => {
+                const agentName = args.agentName as string;
+                const jobId = args.jobId as string;
+                const runtime = this.registry.get(agentName);
+                const success = runtime.removeDynamicJob(jobId);
+                return { success, message: success ? `Job ${jobId} removed.` : `Job ${jobId} not found.` };
+            }
+        };
+
+        const listAgentsSkill: Skill = {
+            name: 'list_agents',
+            description: 'List all other available agents in the system you can delegate tasks to.',
+            parameters: {
+                type: Type.OBJECT,
+                properties: {},
+                required: []
+            },
+            execute: async () => {
+                const agents = this.registry.listConfigs().map(a => ({
+                    name: a.name,
+                    model: a.model,
+                    description: `Agent ${a.name} running ${a.model}`
+                }));
+                return { agents };
+            }
+        };
+
         this.skillRegistry.register(readMemoryFileSkill);
         this.skillRegistry.register(updateMemoryFileSkill);
-        console.log(`[gateway] Registered builtin memory skills: readMemoryFile, updateMemoryFile`);
+        this.skillRegistry.register(delegateTaskSkill);
+        this.skillRegistry.register(scheduleTaskSkill);
+        this.skillRegistry.register(listTasksSkill);
+        this.skillRegistry.register(removeTaskSkill);
+        this.skillRegistry.register(listAgentsSkill);
+        console.log(`[gateway] Registered scheduler & discovery skills: schedule_task, list_tasks, remove_task, list_agents`);
     }
 
-    /**
-     * Channel adapters register themselves here so the gateway can
-     * route responses back to the correct channel.
-     */
-    registerChannel(channelName: string, sendFn: SendCallback): void {
-        this.sendCallbacks.set(channelName, sendFn);
-        console.log(`[gateway] Channel registered: ${channelName}`);
-    }
 
     /**
      * Main entry point for all channel adapters.
@@ -262,7 +412,7 @@ export class Gateway implements IGateway {
         }
 
         // Mirroring: If the owner speaks on one channel, show it on the other
-        if (this.isOwner(channel, peerId)) {
+        if (this.isOwner(channel, peerId, metadata)) {
             if (channel === 'webchat') {
                 // User spoke on WebChat -> Mirror to WhatsApp as a "Note to self"
                 const ownerJid = this.getOwnerJid();
@@ -300,10 +450,15 @@ export class Gateway implements IGateway {
 
         const runtime = this.registry.get(agentName);
 
+        // Prepare peer context (discovery)
+        const peerAgents = this.registry.listConfigs()
+            .filter(a => a.name !== agentName)
+            .map(a => ({ name: a.name, model: a.model }));
+
         // Dispatch through per-session queue (FIFO)
         let response: AgentResponse;
         try {
-            response = await this.queue.enqueue(msg, runtime);
+            response = await this.queue.enqueue(msg, runtime, peerAgents);
         } catch (err) {
             console.error(`[gateway] Runtime error for session ${session.id}:`, err);
             await this.send(channel, peerId, '⚠️ An error occurred. Please try again.');
@@ -314,7 +469,7 @@ export class Gateway implements IGateway {
         await this.send(channel, peerId, response.text, response.thought);
 
         // Mirroring Agent Response: If we replied to the owner, notify the other channel too
-        if (this.isOwner(channel, peerId)) {
+        if (this.isOwner(channel, peerId, metadata)) {
             if (channel === 'webchat') {
                 const ownerJid = this.getOwnerJid();
                 if (ownerJid) {
@@ -400,8 +555,16 @@ export class Gateway implements IGateway {
         parsed.agents = newConfigs;
         parsed.channels = this.channelConfigs;
 
-        fs.writeFileSync(absPath, JSON.stringify(parsed, null, 4), 'utf8');
-        console.log(`[gateway] Configuration persisted to ${configPath}`);
+        const tmpPath = absPath + '.tmp';
+        try {
+            fs.writeFileSync(tmpPath, JSON.stringify(parsed, null, 4), 'utf8');
+            fs.renameSync(tmpPath, absPath);
+            console.log(`[gateway] Configuration persisted atomically to ${configPath}`);
+        } catch (err) {
+            console.error(`[gateway] Failed to save configuration:`, err);
+            if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+            throw err;
+        }
     }
 
     // ── Channel Management ───────────────────────────────────────────────────────
@@ -411,12 +574,37 @@ export class Gateway implements IGateway {
     }
 
     async updateChannelConfig(name: string, config: Partial<ChannelConfig>): Promise<void> {
-        if (!this.channelConfigs[name]) {
-            this.channelConfigs[name] = { enabled: false, agent: 'main' };
-        }
-        this.channelConfigs[name] = { ...this.channelConfigs[name], ...config };
+        const current = this.channelConfigs[name];
+        if (!current) throw new Error(`Channel ${name} not found`);
+
+        this.channelConfigs[name] = { ...current, ...config };
+        this.config.channels[name] = this.channelConfigs[name];
         await this.saveConfig();
-        console.log(`[gateway] Channel ${name} configuration updated.`);
+        console.log(`[gateway] Channel ${name} updated.`);
+    }
+
+    getProjectConfig(): ProjectConfig {
+        return this.config.project;
+    }
+
+    async updateProjectConfig(project: Partial<ProjectConfig>): Promise<void> {
+        this.config.project = { ...this.config.project, ...project };
+        await this.saveConfig();
+        console.log(`[gateway] Project config updated: ${this.config.project.name}`);
+    }
+
+    getProviders(): ProviderConfig[] {
+        return this.config.providers;
+    }
+
+    async updateProviders(providers: ProviderConfig[]): Promise<void> {
+        this.config.providers = providers;
+        await this.saveConfig();
+        console.log(`[gateway] Providers updated. Count: ${providers.length}`);
+    }
+
+    getGlobalConfig(): GatewayConfig {
+        return this.config;
     }
 
     async shutdown(): Promise<void> {
@@ -431,7 +619,14 @@ export class Gateway implements IGateway {
         if (metadata?.fromMe === true) return true;
 
         const cfg = this.channelConfigs[channel];
-        if (!cfg) return true; // No config = open (dev mode)
+        if (!cfg) {
+            if (process.env['NODE_ENV'] === 'development') {
+                console.warn(`[gateway/acl] DEV MODE: allowing unconfigured channel="${channel}"`);
+                return true;
+            }
+            console.warn(`[gateway/acl] DENIED: channel="${channel}" has no config. Set NODE_ENV=development to allow.`);
+            return false;
+        }
 
         // Telegram: check allowedUserIds
         if ('allowedUserIds' in cfg && Array.isArray(cfg.allowedUserIds)) {
@@ -469,8 +664,8 @@ export class Gateway implements IGateway {
         return undefined;
     }
 
-    private isOwner(channel: string, peerId: string): boolean {
-        if (channel === 'webchat') return true;
+    private isOwner(channel: string, peerId: string, metadata?: Record<string, any>): boolean {
+        if (channel === 'webchat') return metadata?.isOwner === true;
         if (channel === 'whatsapp') {
             const ownerJid = this.getOwnerJid();
             if (!ownerJid) return false;

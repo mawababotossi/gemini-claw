@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Bot, RefreshCw, Edit2, Plus, X, Save, Trash2 } from 'lucide-react';
+import { Bot, RefreshCw, Edit2, Plus, X, Save, Trash2, Calendar, History, FileText } from 'lucide-react';
 import { api, type AgentConfig } from '../services/api';
 import './Agents.css';
 
@@ -16,6 +16,11 @@ export function Agents() {
         fallbackModels: ['gemini-1.5-pro'],
         skills: []
     });
+
+    const [expandedAgent, setExpandedAgent] = useState<string | null>(null);
+    const [agentJobs, setAgentJobs] = useState<any[]>([]);
+    const [agentMemory, setAgentMemory] = useState<any[]>([]);
+    const [viewingJournal, setViewingJournal] = useState<{ name: string, content: string } | null>(null);
 
     const fetchAgents = async () => {
         try {
@@ -87,6 +92,46 @@ export function Agents() {
         }
     };
 
+    const toggleExpand = async (name: string) => {
+        if (expandedAgent === name) {
+            setExpandedAgent(null);
+            return;
+        }
+        setExpandedAgent(name);
+        setAgentJobs([]);
+        setAgentMemory([]);
+        try {
+            const [jobs, memory] = await Promise.all([
+                api.getAgentJobs(name),
+                api.getAgentMemory(name)
+            ]);
+            setAgentJobs(jobs);
+            setAgentMemory(memory);
+        } catch (err) {
+            console.error('Failed to fetch agent details', err);
+        }
+    };
+
+    const handleViewJournal = async (agentName: string, filename: string) => {
+        try {
+            const content = await api.getAgentMemoryContent(agentName, filename);
+            setViewingJournal({ name: filename, content });
+        } catch (err) {
+            alert('Failed to load journal content');
+        }
+    };
+
+    const removeJob = async (agentName: string, jobId: string) => {
+        if (!confirm('Remove this scheduled task?')) return;
+        try {
+            await api.deleteAgentJob(agentName, jobId);
+            const jobs = await api.getAgentJobs(agentName);
+            setAgentJobs(jobs);
+        } catch (err) {
+            alert('Failed to remove job');
+        }
+    };
+
     return (
         <div className="page-container">
             <div className="page-header flex justify-between items-center">
@@ -106,9 +151,9 @@ export function Agents() {
             ) : (
                 <div className="agents-grid">
                     {agents.map((agent) => (
-                        <div key={agent.name} className="agent-card glass-card">
+                        <div key={agent.name} className={`agent-card glass-card ${expandedAgent === agent.name ? 'expanded' : ''}`}>
                             <div className="agent-header flex justify-between items-center">
-                                <div className="flex items-center gap-4">
+                                <div className="flex items-center gap-4 cursor-pointer" onClick={() => toggleExpand(agent.name)}>
                                     <div className="status-indicator-ring active">
                                         <Bot size={24} />
                                     </div>
@@ -136,12 +181,6 @@ export function Agents() {
                                     <span className="label">Location</span>
                                     <span className="value text-sm text-muted" title={agent.baseDir}>{agent.baseDir}</span>
                                 </div>
-                                {agent.modelCallback && (
-                                    <div className="info-row">
-                                        <span className="label">Callback</span>
-                                        <span className="value">{agent.modelCallback}</span>
-                                    </div>
-                                )}
                                 <div className="info-row">
                                     <span className="label">Skills</span>
                                     <div className="skills-list">
@@ -150,16 +189,68 @@ export function Agents() {
                                         )) : <span className="text-muted">No skills</span>}
                                     </div>
                                 </div>
+
+                                {expandedAgent === agent.name && (
+                                    <div className="agent-details-sections mt-4 animate-fade-in">
+                                        <div className="details-section">
+                                            <h4><Calendar size={14} className="inline mr-1" /> Scheduled Tasks (Cron)</h4>
+                                            <div className="jobs-list">
+                                                {agentJobs.length > 0 ? agentJobs.map(job => (
+                                                    <div key={job.id} className="job-item flex justify-between items-center">
+                                                        <div>
+                                                            <code className="text-xs">{job.cron}</code>
+                                                            <p className="text-sm truncate" style={{ maxWidth: '200px' }}>{job.prompt}</p>
+                                                        </div>
+                                                        <button className="icon-btn text-danger" onClick={() => removeJob(agent.name, job.id)}>
+                                                            <X size={14} />
+                                                        </button>
+                                                    </div>
+                                                )) : <p className="text-muted text-sm">No active tasks.</p>}
+                                            </div>
+                                        </div>
+
+                                        <div className="details-section mt-4">
+                                            <h4><History size={14} className="inline mr-1" /> Daily Memory Journals</h4>
+                                            <div className="journals-list">
+                                                {agentMemory.length > 0 ? agentMemory.map(file => (
+                                                    <div key={file.name} className="journal-item flex justify-between items-center cursor-pointer" onClick={() => handleViewJournal(agent.name, file.name)}>
+                                                        <div className="flex items-center gap-2">
+                                                            <FileText size={14} />
+                                                            <span className="text-sm">{file.name}</span>
+                                                        </div>
+                                                        <span className="text-xs text-muted">{(file.size / 1024).toFixed(1)} KB</span>
+                                                    </div>
+                                                )) : <p className="text-muted text-sm">No journals recorded.</p>}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
 
                             <div className="agent-footer flex justify-between items-center">
-                                <span className="text-muted text-sm">Persistent instance</span>
-                                <button className="btn btn-outline" style={{ padding: '0.25rem 0.75rem', fontSize: '0.8rem' }}>
-                                    <RefreshCw size={14} /> Reload
+                                <button className="btn btn-outline" onClick={() => toggleExpand(agent.name)} style={{ padding: '0.25rem 0.75rem', fontSize: '0.8rem' }}>
+                                    {expandedAgent === agent.name ? 'Hide Details' : 'Show Details'}
                                 </button>
+                                <span className="text-muted text-sm">Persistent instance</span>
                             </div>
                         </div>
                     ))}
+                </div>
+            )}
+
+            {viewingJournal && (
+                <div className="modal-overlay">
+                    <div className="modal-content glass-panel" style={{ maxWidth: '800px' }}>
+                        <div className="modal-header">
+                            <h2>Journal: {viewingJournal.name}</h2>
+                            <button className="close-btn" onClick={() => setViewingJournal(null)}>
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className="modal-body" style={{ maxHeight: '60vh', overflowY: 'auto', background: '#111', padding: '1rem', borderRadius: '8px' }}>
+                            <pre className="text-xs whitespace-pre-wrap">{viewingJournal.content}</pre>
+                        </div>
+                    </div>
                 </div>
             )}
 

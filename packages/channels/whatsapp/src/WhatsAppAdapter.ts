@@ -28,6 +28,8 @@ export class WhatsAppAdapter {
     private gatewayRef: IGateway | null = null;
     private status: 'connecting' | 'qr' | 'connected' | 'disconnected' = 'disconnected';
     private qrStr: string | null = null;
+    private processedMessages = new Set<string>();
+    private peerToLastJid = new Map<string, string>();
 
     constructor(private options: WhatsAppAdapterOptions = {}) {
         this.authDir = options.authDir ?? AUTH_DIR;
@@ -65,19 +67,42 @@ export class WhatsAppAdapter {
 
     async connect(gateway: IGateway): Promise<void> {
         this.gatewayRef = gateway;
-        gateway.registerChannel(CHANNEL, async (peerId: string, text: string) => {
-            if (!this.sock) return;
-            try {
-                console.log(`[whatsapp-debug] Sending message to ${peerId}: ${text.slice(0, 50)}...`);
-                // Add a zero-width space to identify bot-generated messages
-                // and prevent infinite loops when the bot replies to itself.
-                const botReplyText = text + '\u200B';
-                await this.sock.sendMessage(peerId, { text: botReplyText });
-                console.log(`[whatsapp-debug] Message sent to ${peerId} successfully.`);
-            } catch (err) {
-                console.error('[whatsapp] Send failed:', err);
+        gateway.registerChannel(
+            CHANNEL,
+            async (peerId, text) => {
+                if (!this.sock) return;
+                try {
+                    const myJid = this.sock?.user?.id ? this.sock.user.id.split('@')[0].split(':')[0] + '@s.whatsapp.net' : '';
+                    // For self-chat, ALWAYS use the canonical JID to ensure it appears in the "Note to self" thread
+                    const isSelf = peerId === myJid;
+                    const realJid = isSelf ? myJid : (this.peerToLastJid.get(peerId) || peerId);
+
+                    console.log(`[whatsapp-debug] Sending message to ${realJid} (from peerId ${peerId}): ${text.slice(0, 50)}...`);
+                    // Add a zero-width space to identify bot-generated messages
+                    const botReplyText = text + '\u200B';
+                    await this.sock.sendMessage(realJid, { text: botReplyText });
+                    console.log(`[whatsapp-debug] Message sent successful.`);
+                } catch (err) {
+                    console.error('[whatsapp] Send failed:', err);
+                }
+            },
+            async (peerId, type) => {
+                if (!this.sock) return;
+                try {
+                    const myJid = this.sock?.user?.id ? this.sock.user.id.split('@')[0].split(':')[0] + '@s.whatsapp.net' : '';
+                    const isSelf = peerId === myJid;
+                    const realJid = isSelf ? myJid : (this.peerToLastJid.get(peerId) || peerId);
+
+                    console.log(`[whatsapp-debug] activityCallback: type=${type} peerId=${realJid} (mapped from ${peerId})`);
+                    const presence = type === 'typing' ? 'composing' : 'paused';
+                    await this.sock.presenceSubscribe(realJid);
+                    await this.sock.sendPresenceUpdate(presence, realJid);
+                    console.log(`[whatsapp-debug] sendPresenceUpdate(${presence}) successful`);
+                } catch (err) {
+                    console.error('[whatsapp-debug] activityCallback error:', err);
+                }
             }
-        });
+        );
 
         await this.startSocket(gateway);
     }
@@ -88,14 +113,13 @@ export class WhatsAppAdapter {
         }
 
         // Dynamic import of Baileys (avoids TypeScript issues with CJS/ESM interop)
-        const baileys = await import('@whiskeysockets/baileys') as BaileysModule;
-        const {
-            default: makeWASocket,
-            useMultiFileAuthState,
-            fetchLatestBaileysVersion,
-            DisconnectReason,
-            isJidGroup,
-        } = baileys;
+        const baileysModule = (await import('@whiskeysockets/baileys')) as any;
+        const b = baileysModule.default || baileysModule;
+        const makeWASocket = typeof b === 'function' ? b : (b.default || b);
+        const useMultiFileAuthState = b.useMultiFileAuthState || baileysModule.useMultiFileAuthState;
+        const fetchLatestBaileysVersion = b.fetchLatestBaileysVersion || baileysModule.fetchLatestBaileysVersion;
+        const DisconnectReason = b.DisconnectReason || baileysModule.DisconnectReason;
+        const isJidGroup = b.isJidGroup || baileysModule.isJidGroup;
 
         const { state, saveCreds } = await useMultiFileAuthState(this.authDir);
         const { version } = await fetchLatestBaileysVersion();
@@ -125,6 +149,7 @@ export class WhatsAppAdapter {
             if (connection === 'close') {
                 this.status = 'disconnected';
                 this.qrStr = null;
+                this.processedMessages.clear(); // Clear processed messages on disconnect
                 const code = lastDisconnect?.error?.output?.statusCode;
                 const loggedOut = code === DisconnectReason?.loggedOut;
                 console.log('[whatsapp] Disconnected.', loggedOut ? 'Logged out.' : 'Reconnecting in 5s...');
@@ -180,6 +205,22 @@ export class WhatsAppAdapter {
             for (const msg of messages) {
                 if (!msg.message) continue;
 
+                const msgId = msg.key?.id;
+                if (!msgId) continue;
+
+                // Deduplication cache check
+                if (this.processedMessages.has(msgId)) {
+                    console.log(`[whatsapp-debug] Skipping already processed message ID: ${msgId}`);
+                    continue;
+                }
+
+                // Add to cache & maintain bounded size
+                this.processedMessages.add(msgId);
+                if (this.processedMessages.size > 1000) {
+                    const firstItem = this.processedMessages.values().next().value;
+                    if (firstItem) this.processedMessages.delete(firstItem);
+                }
+
                 const jid: string = msg.key?.remoteJid ?? '';
                 if (!jid) continue;
 
@@ -197,6 +238,7 @@ export class WhatsAppAdapter {
 
                 const normalizeJid = (id: string) => {
                     if (!id) return '';
+                    if (id.includes('@g.us') || id.includes('@lid')) return id;
                     return `${id.split('@')[0].split(':')[0]}@s.whatsapp.net`;
                 };
 
@@ -213,9 +255,13 @@ export class WhatsAppAdapter {
 
                 // Allow fromMe only if chatting with oneself (Note to self)
                 // Note: Self-messages often arrive with @lid instead of @s.whatsapp.net
-                const isSelfLid = jid.endsWith('@lid');
-                if (msg.key?.fromMe && baseRemoteJid !== myJid && !isSelfLid) {
-                    console.log(`[whatsapp-debug] Dropped (fromMe && baseRemoteJid !== myJid && !isSelfLid)`);
+                // We consider it self if the normalized base remote JID is my JID
+                const isSelf = baseRemoteJid === myJid || (msg.key?.fromMe && jid.endsWith('@lid'));
+                // Wait: (msg.key?.fromMe && jid.endsWith('@lid')) is still a bit broad but safer than before
+                // if we check if there's an alternative to detect my own LID.
+
+                if (msg.key?.fromMe && !isSelf) {
+                    console.log(`[whatsapp-debug] Dropped secondary fromMe message to ${jid}`);
                     continue;
                 }
 
@@ -231,7 +277,10 @@ export class WhatsAppAdapter {
                 }
 
                 try {
+                    console.log(`[whatsapp-debug] Initial sendPresenceUpdate(composing) for ${jid}`);
+                    await this.sock?.presenceSubscribe(jid);
                     await this.sock?.sendPresenceUpdate('composing', jid);
+                    console.log(`[whatsapp-debug] Initial sendPresenceUpdate(composing) successful`);
                 } catch { /* ignore */ }
 
                 console.log(`[whatsapp] Ingesting message to gateway: ${text.trim()} (fromMe=${msg.key?.fromMe})`);
@@ -239,10 +288,12 @@ export class WhatsAppAdapter {
                 // For self-messages, we MUST use our own canonical JID as peerId 
                 // to ensure the reply goes to the "Note to self" chat thread.
                 const targetJid = msg.key?.fromMe ? myJid : jid;
+                this.peerToLastJid.set(targetJid, jid);
                 await gateway.ingest(CHANNEL, targetJid, text.trim(), undefined, { fromMe: !!msg.key?.fromMe });
 
 
                 try {
+                    console.log(`[whatsapp-debug] Final sendPresenceUpdate(paused) for ${jid}`);
                     await this.sock?.sendPresenceUpdate('paused', jid);
                 } catch { /* ignore */ }
             }

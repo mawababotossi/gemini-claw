@@ -147,7 +147,13 @@ export function WebChat() {
         }]);
 
         // Send to Gateway
-        wsRef.current.send(JSON.stringify({ type: 'message', clientId: clientId.current, text }));
+        const DASHBOARD_SECRET = import.meta.env.VITE_DASHBOARD_SECRET || '';
+        wsRef.current.send(JSON.stringify({
+            type: 'message',
+            clientId: clientId.current,
+            text,
+            secret: DASHBOARD_SECRET
+        }));
 
         // Reset input
         setInputMessage('');

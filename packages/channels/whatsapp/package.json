@@ -12,7 +12,7 @@
         "test": "vitest run"
     },
     "dependencies": {
-        "@geminiclaw/gateway": "workspace:*",
+        "@geminiclaw/core": "workspace:*",
         "@geminiclaw/memory": "workspace:*",
         "@whiskeysockets/baileys": "^6.7.9",
         "pino": "^9.0.0"

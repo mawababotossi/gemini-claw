@@ -11,7 +11,7 @@
         "test": "vitest run"
     },
     "dependencies": {
-        "@geminiclaw/gateway": "workspace:*",
+        "@geminiclaw/core": "workspace:*",
         "@geminiclaw/memory": "workspace:*",
         "telegraf": "^4.16.3"
     },

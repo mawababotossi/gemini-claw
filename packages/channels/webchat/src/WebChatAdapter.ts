@@ -18,6 +18,7 @@ interface WsMessage {
     type: 'message' | 'ping';
     clientId: string;
     text?: string;
+    secret?: string;
 }
 
 export class WebChatAdapter {
@@ -90,7 +91,10 @@ export class WebChatAdapter {
                     // Acknowledge receipt immediately
                     ws.send(JSON.stringify({ type: 'typing' }));
                     // Let the gateway handle it
-                    await gateway.ingest(CHANNEL, clientId, parsed.text.trim());
+                    const metadata = {
+                        isOwner: !!parsed.secret && parsed.secret === process.env['DASHBOARD_SECRET']
+                    };
+                    await gateway.ingest(CHANNEL, clientId, parsed.text.trim(), undefined, metadata);
                 }
             });
 

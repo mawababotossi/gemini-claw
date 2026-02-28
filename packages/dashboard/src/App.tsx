@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Sidebar, TopBar } from './components';
-import { Dashboard, Agents, Sessions, WebChat, Logs, Channels } from './pages';
+import { Dashboard, Agents, Sessions, WebChat, Logs, Channels, Settings } from './pages';
 
 function App() {
   return (
@@ -17,7 +17,7 @@ function App() {
               <Route path="/sessions" element={<Sessions />} />
               <Route path="/channels" element={<Channels />} />
               <Route path="/logs" element={<Logs />} />
-              <Route path="/settings" element={<div className="page-container"><div className="page-header"><h1>Settings</h1><p>Not implemented yet.</p></div></div>} />
+              <Route path="/settings" element={<Settings />} />
             </Routes>
           </div>
         </main>

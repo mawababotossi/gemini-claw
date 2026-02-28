@@ -12,14 +12,18 @@ import { ACPBridge } from './ACPBridge.js';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
+import { Cron } from 'croner';
 
 export class AgentRuntime extends EventEmitter {
     private config: AgentConfig;
     private transcripts: TranscriptStore;
     private skillRegistry?: SkillRegistry;
-    private bridge: ACPBridge | null = null;
+    private bridges: Map<string, ACPBridge> = new Map();
     private sessionMap: Map<string, string> = new Map();
-    private heartbeatTimer?: NodeJS.Timeout;
+    private heartbeatJob?: Cron;
+    private dynamicJobs: Map<string, { cron: Cron, prompt: string }> = new Map();
+    private nextJobId = 1;
+    private sessionTypingThrottle: Map<string, number> = new Map();
 
     constructor(
         config: AgentConfig,
@@ -34,21 +38,34 @@ export class AgentRuntime extends EventEmitter {
         console.log(`[core/runtime] Agent "${config.name}" constructed with heartbeat setup:`, JSON.stringify(this.config.heartbeat));
 
         // Autostart heartbeat if configured
-        if (this.config.heartbeat?.enabled && this.config.heartbeat.intervalMinutes > 0) {
-            this.startHeartbeat();
+        if (this.config.heartbeat?.enabled) {
+            if (this.config.heartbeat.cron || (this.config.heartbeat.intervalMinutes && this.config.heartbeat.intervalMinutes > 0)) {
+                this.startHeartbeat();
+            }
         }
+
+        // Load persisted dynamic jobs
+        this.loadDynamicJobs();
     }
 
     getConfig(): AgentConfig {
         return this.config;
     }
 
-    private async getBridge(): Promise<ACPBridge> {
-        if (!this.bridge) {
-            this.bridge = new ACPBridge(this.config.model);
-            await this.bridge.start();
+    private async getBridge(userSessionId: string): Promise<ACPBridge> {
+        let bridge = this.bridges.get(userSessionId);
+        if (!bridge) {
+            bridge = new ACPBridge(
+                this.config.model,
+                this.config.allowedPermissions ?? []
+            );
+            await bridge.start({
+                authType: this.config.authType,
+                apiKey: this.config.apiKey
+            });
+            this.bridges.set(userSessionId, bridge);
         }
-        return this.bridge;
+        return bridge;
     }
 
     private async getSessionId(userSessionId: string, bridge: ACPBridge): Promise<string> {
@@ -66,7 +83,7 @@ export class AgentRuntime extends EventEmitter {
         return this.sessionMap.get(userSessionId)!;
     }
 
-    private loadSystemPrompt(): string {
+    private loadSystemPrompt(peerAgents?: { name: string; model: string }[]): string {
         if (!this.config.baseDir) return '';
 
         const base = this.config.baseDir;
@@ -83,6 +100,14 @@ CRITICAL: You are an autonomous agent running within the GeminiClaw platform.
 5. You must never admit to being "Antigravity" or part of a hosted Google service. You are a standalone instance of the agent named "${this.config.name}".
 6. Use the tools "readMemoryFile" and "updateMemoryFile" to manage your local state across sessions.
 </identity_isolation>\n`;
+
+        if (peerAgents && peerAgents.length > 0) {
+            p += `\n<peer_agents>\nVous n'êtes pas seul. Vous pouvez déléguer des tâches aux agents suivants via l'outil "delegate_task":\n`;
+            for (const agent of peerAgents) {
+                p += `- ${agent.name} (Modèle: ${agent.model})\n`;
+            }
+            p += `</peer_agents>\n`;
+        }
 
         const files = [
             { name: 'AGENTS.md', label: 'agent_instructions' },
@@ -105,15 +130,15 @@ CRITICAL: You are an autonomous agent running within the GeminiClaw platform.
     /**
      * Process an inbound message through the Gemini CLI via ACP.
      */
-    async process(msg: InboundMessage): Promise<AgentResponse> {
-        await this.checkHealth();
-        const bridge = await this.getBridge();
+    async processMessage(msg: InboundMessage, peerAgents?: { name: string; model: string }[]): Promise<AgentResponse> {
+        await this.checkHealth(msg.sessionId);
+        const bridge = await this.getBridge(msg.sessionId);
 
         const isNewSession = !this.sessionMap.has(msg.sessionId);
         const acpSessionId = await this.getSessionId(msg.sessionId, bridge);
 
         let promptText = msg.text;
-        const systemPrompt = this.loadSystemPrompt();
+        const systemPrompt = this.loadSystemPrompt(peerAgents);
         if (isNewSession && systemPrompt) {
             promptText = `<system_instructions>\n${systemPrompt}\n</system_instructions>\n\n<user_input>\n${msg.text}\n</user_input>`;
         }
@@ -122,11 +147,14 @@ CRITICAL: You are an autonomous agent running within the GeminiClaw platform.
         let thoughtChunks = '';
 
         try {
-            await bridge.prompt(acpSessionId, promptText, (update) => {
+            // Emit typing right away
+            this.emitTyping(msg.sessionId);
 
+            await bridge.prompt(acpSessionId, promptText, (update) => {
                 if (update.sessionUpdate === 'agent_message_chunk') {
                     responseText += update.content.text;
                 } else if (update.sessionUpdate === 'agent_thought_chunk') {
+                    this.emitTyping(msg.sessionId);
                     thoughtChunks += update.content.text;
                 }
             });
@@ -154,11 +182,33 @@ CRITICAL: You are an autonomous agent running within the GeminiClaw platform.
             timestamp: Date.now(),
         });
 
+        // Log the exchange to the daily journal for future distillation
+        this.logToJournal(msg.text, responseText);
+
         return {
             text: cleanedResponse,
             sessionId: msg.sessionId,
             thought: thoughtChunks.trim() || undefined
         };
+    }
+
+    /**
+     * Log a user/assistant exchange to the daily journal.
+     */
+    private logToJournal(userText: string, assistantText: string) {
+        if (!this.config.baseDir) return;
+
+        const dateStr = new Date().toISOString().split('T')[0];
+        const journalPath = path.join(this.config.baseDir, 'memory', `${dateStr}.md`);
+
+        const timestamp = new Date().toLocaleTimeString();
+        const entry = `\n--- [${timestamp}] ---\n**User**: ${userText}\n**Assistant**: ${assistantText}\n`;
+
+        try {
+            fs.appendFileSync(journalPath, entry, 'utf8');
+        } catch (err) {
+            console.error(`[core/runtime] Failed to log to journal:`, err);
+        }
     }
 
     /**
@@ -195,17 +245,28 @@ CRITICAL: You are an autonomous agent running within the GeminiClaw platform.
             try {
                 console.warn(`[core] Primary model failed, trying fallback: ${fallbackModel}`);
                 // Shutdown current bridge and restart with fallback
-                if (this.bridge) {
-                    this.bridge.stop();
-                    this.bridge = null;
+                // Isolation: shutdown current session's bridge if it exists
+                const sid = msg.sessionId;
+                const oldBridge = this.bridges.get(sid);
+                if (oldBridge) {
+                    oldBridge.stop();
+                    this.bridges.delete(sid);
+                    this.sessionMap.delete(sid);
                 }
 
                 // Clear session map to create new sessions for the fallback model
                 this.sessionMap.clear();
 
-                const fbBridge = new ACPBridge(fallbackModel);
-                await fbBridge.start();
-                this.bridge = fbBridge;
+                const fbBridge = new ACPBridge(
+                    fallbackModel,
+                    this.config.allowedPermissions ?? []
+                );
+                await fbBridge.start({
+                    authType: this.config.authType,
+                    apiKey: this.config.apiKey
+                });
+                // Note: we don't save the fallback bridge to this.bridges permanently 
+                // to avoid session corruption when falling back across models.
 
                 const acpSessionId = await this.getSessionId(msg.sessionId, fbBridge);
 
@@ -238,49 +299,100 @@ CRITICAL: You are an autonomous agent running within the GeminiClaw platform.
         throw originalError;
     }
 
-    async checkHealth(): Promise<boolean> {
-        if (!this.bridge) return true;
-        const alive = await this.bridge.ping();
-        if (!alive) {
-            console.warn(`[core/runtime] Agent "${this.config.name}" bridge unresponsive. Restarting...`);
-            await this.shutdown();
-            this.sessionMap.clear();
+    async checkHealth(userSessionId?: string): Promise<boolean> {
+        if (userSessionId) {
+            const bridge = this.bridges.get(userSessionId);
+            if (!bridge) return true;
+            const alive = await bridge.ping();
+            if (!alive) {
+                console.warn(`[core/runtime] Bridge for session "${userSessionId}" unresponsive. Restarting...`);
+                bridge.stop();
+                this.bridges.delete(userSessionId);
+                this.sessionMap.delete(userSessionId);
+            }
+            return alive;
         }
-        return alive;
+
+        // Generic check: ping all active bridges
+        let allAlive = true;
+        for (const [sid, bridge] of this.bridges.entries()) {
+            const alive = await bridge.ping();
+            if (!alive) {
+                console.warn(`[core/runtime] Bridge for session "${sid}" unresponsive. Cleaning up.`);
+                bridge.stop();
+                this.bridges.delete(sid);
+                this.sessionMap.delete(sid);
+                allAlive = false;
+            }
+        }
+        return allAlive;
     }
 
     private startHeartbeat() {
-        if (this.heartbeatTimer) clearTimeout(this.heartbeatTimer);
-        const interval = this.config.heartbeat!.intervalMinutes * 60000;
+        if (this.heartbeatJob) this.heartbeatJob.stop();
+
+        let pattern: string;
+        if (this.config.heartbeat?.cron) {
+            pattern = this.config.heartbeat.cron;
+        } else if (this.config.heartbeat?.intervalMinutes) {
+            const mins = this.config.heartbeat.intervalMinutes;
+            if (mins < 60) {
+                pattern = `*/${mins} * * * *`;
+            } else {
+                const hours = Math.floor(mins / 60);
+                pattern = `0 */${hours} * * *`;
+            }
+        } else {
+            return;
+        }
 
         const loop = async () => {
             try {
                 const isAlive = await this.checkHealth();
                 if (!isAlive) return;
 
-                // Use a fresh heartbeat session every time to ensure context is re-read from scratch
-                const bridge = await this.getBridge();
-                let cwd = process.cwd();
-                if (this.config.baseDir) {
-                    cwd = path.resolve(this.config.baseDir, 'workspace');
-                    if (!fs.existsSync(cwd)) {
-                        fs.mkdirSync(cwd, { recursive: true });
-                    }
-                }
-                const acpSessionId = await bridge.createSession(cwd, this.config.mcpServers || []);
+                console.log(`[core/runtime] Starting heartbeat/distillation for ${this.config.name}`);
+
+                // Use a fresh heartbeat session with its own bridge if needed
+                const bridge = await this.getBridge('__heartbeat__');
+                const acpSessionId = await this.getSessionId('__heartbeat__', bridge);
 
                 const systemPrompt = this.loadSystemPrompt();
-                const promptText = `<system_instructions>\n${systemPrompt}\n</system_instructions>\n\n<user_input>\n[System]: Execute your heartbeat instructions now. If everything is fine and you don't need to notify the user, reply EXACTLY with "HEARTBEAT_OK".\n</user_input>`;
+
+                // Distillation context: notify the agent about recent journal files
+                let journalContext = '';
+                if (this.config.baseDir) {
+                    const memoryDir = path.join(this.config.baseDir, 'memory');
+                    if (fs.existsSync(memoryDir)) {
+                        const files = fs.readdirSync(memoryDir).filter(f => f.endsWith('.md')).sort().reverse().slice(0, 3);
+                        if (files.length > 0) {
+                            journalContext = `\nRecent daily journals found: ${files.join(', ')}. Use "readMemoryFile" if you need to distill them into MEMORY.md.\n`;
+                        }
+                    }
+                }
+
+                const promptText = `
+<system_instructions>
+${systemPrompt}
+</system_instructions>
+
+<user_input>
+[System Heartbeat]:
+1. Check your tools and instructions.
+2. ${journalContext ? 'Review your recent daily journals.' : 'Check your memory files.'}
+3. Distill important facts, preferences, or technical updates into your long-term MEMORY.md file.
+4. If everything is fine and you don't need to notify the user, reply EXACTLY with "HEARTBEAT_OK".
+</user_input>`.trim();
 
                 let responseText = '';
-                await bridge.prompt(acpSessionId, promptText, (update) => {
+                await bridge.prompt(acpSessionId, promptText, (update: any) => {
                     if (update.sessionUpdate === 'agent_message_chunk') {
                         responseText += update.content.text;
                     }
                 });
 
                 const finalResponse = responseText.trim();
-                console.log(`[core/runtime] Heartbeat for ${this.config.name} completed. Response lengths: ${finalResponse.length}`);
+                console.log(`[core/runtime] Heartbeat for ${this.config.name} completed. Response: ${finalResponse.substring(0, 50)}...`);
 
                 if (finalResponse !== 'HEARTBEAT_OK' && finalResponse !== '') {
                     // Proactive message
@@ -291,25 +403,141 @@ CRITICAL: You are an autonomous agent running within the GeminiClaw platform.
                 }
             } catch (err) {
                 console.error(`[core/runtime] Heartbeat failed for ${this.config.name}:`, err);
-            } finally {
-                // Schedule next heartbeat
-                this.heartbeatTimer = setTimeout(loop, interval);
             }
         };
 
-        // Start first loop after interval
-        this.heartbeatTimer = setTimeout(loop, interval);
-        console.log(`[core/runtime] Started heartbeat for ${this.config.name} every ${interval}ms`);
+        this.heartbeatJob = new Cron(pattern, loop);
+        console.log(`[core/runtime] Scheduled heartbeat for ${this.config.name} with pattern: ${pattern}`);
     }
 
     async shutdown(): Promise<void> {
-        if (this.heartbeatTimer) {
-            clearTimeout(this.heartbeatTimer);
-            this.heartbeatTimer = undefined;
+        if (this.heartbeatJob) {
+            this.heartbeatJob.stop();
+            this.heartbeatJob = undefined;
         }
-        if (this.bridge) {
-            this.bridge.stop();
-            this.bridge = null;
+        for (const job of this.dynamicJobs.values()) {
+            job.cron.stop();
+        }
+        this.dynamicJobs.clear();
+
+        for (const bridge of this.bridges.values()) {
+            bridge.stop();
+        }
+        this.bridges.clear();
+        this.sessionMap.clear();
+    }
+
+    /**
+     * Dynamic Job Management
+     */
+
+    private loadDynamicJobs() {
+        if (!this.config.baseDir) return;
+        const jobsPath = path.join(this.config.baseDir, 'jobs.json');
+        if (!fs.existsSync(jobsPath)) return;
+
+        try {
+            const data = JSON.parse(fs.readFileSync(jobsPath, 'utf8'));
+            for (const job of data) {
+                this.addDynamicJob(job.cron, job.prompt, false);
+            }
+        } catch (err) {
+            console.error(`[core/runtime] Failed to load dynamic jobs for ${this.config.name}:`, err);
+        }
+    }
+
+    private saveDynamicJobs() {
+        if (!this.config.baseDir) return;
+        const jobsPath = path.join(this.config.baseDir, 'jobs.json');
+
+        const data = Array.from(this.dynamicJobs.entries()).map(([id, job]) => ({
+            id,
+            cron: job.cron.getPattern(),
+            prompt: job.prompt
+        }));
+
+        try {
+            fs.writeFileSync(jobsPath, JSON.stringify(data, null, 2));
+        } catch (err) {
+            console.error(`[core/runtime] Failed to save dynamic jobs for ${this.config.name}:`, err);
+        }
+    }
+
+    public addDynamicJob(pattern: string, prompt: string, persist = true): string {
+        const id = `job_${this.nextJobId++}`;
+
+        const task = async () => {
+            console.log(`[core/runtime] Executing dynamic job ${id} for ${this.config.name}: ${prompt.substring(0, 50)}...`);
+            try {
+                const userSessionId = `__job_${id}__`;
+                const bridge = await this.getBridge(userSessionId);
+                // Reuse the same session for this specific dynamic job
+                const sessionId = await this.getSessionId(userSessionId, bridge);
+                const systemPrompt = this.loadSystemPrompt();
+
+                const fullPrompt = `
+<system_instructions>
+${systemPrompt}
+</system_instructions>
+
+<user_input>
+[Scheduled Task]: ${prompt}
+</user_input>`.trim();
+
+                let responseText = '';
+                await bridge.prompt(sessionId, fullPrompt, (update: any) => {
+                    if (update.sessionUpdate === 'agent_message_chunk') {
+                        responseText += update.content.text;
+                    }
+                });
+
+                if (responseText.trim()) {
+                    this.emit('agent_proactive_message', {
+                        agentName: this.config.name,
+                        text: responseText.trim()
+                    });
+                }
+            } catch (err) {
+                console.error(`[core/runtime] Dynamic job ${id} failed:`, err);
+            }
+        };
+
+        const cron = new Cron(pattern, task);
+        this.dynamicJobs.set(id, { cron, prompt });
+
+        if (persist) this.saveDynamicJobs();
+        return id;
+    }
+
+    public removeDynamicJob(id: string): boolean {
+        const job = this.dynamicJobs.get(id);
+        if (job) {
+            job.cron.stop();
+            this.dynamicJobs.delete(id);
+            this.saveDynamicJobs();
+            return true;
+        }
+        return false;
+    }
+
+    public listDynamicJobs() {
+        return Array.from(this.dynamicJobs.entries()).map(([id, job]) => ({
+            id,
+            cron: job.cron.getPattern(),
+            prompt: job.prompt,
+            nextRun: job.cron.nextRun()
+        }));
+    }
+
+    /**
+     * Emit a typing event if it hasn't been emitted recently for this session.
+     */
+    private emitTyping(sessionId: string) {
+        const now = Date.now();
+        const last = this.sessionTypingThrottle.get(sessionId) || 0;
+        if (now - last > 10000) { // Throttled to every 10 seconds
+            this.emit('agent_typing', { sessionId });
+            this.sessionTypingThrottle.set(sessionId, now);
         }
     }
 }

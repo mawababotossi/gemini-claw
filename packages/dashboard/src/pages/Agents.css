@@ -9,6 +9,7 @@
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
+    transition: all var(--transition-normal);
 }
 
 .agent-header h3 {
@@ -94,6 +95,60 @@
 .agent-footer {
     padding-top: 1rem;
     border-top: 1px solid var(--border);
+}
+
+/* Expanded Card Styles */
+.agent-card.expanded {
+    grid-column: 1 / -1;
+    background: rgba(255, 255, 255, 0.05);
+    border-color: var(--primary);
+}
+
+.agent-details-sections {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+    padding: 1.5rem;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: var(--radius-md);
+    margin-top: 1rem;
+}
+
+.details-section h4 {
+    margin: 0 0 1rem 0;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.jobs-list,
+.journals-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.job-item,
+.journal-item {
+    background: var(--bg-dark);
+    padding: 0.75rem 1rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    transition: all var(--transition-fast);
+}
+
+.job-item:hover,
+.journal-item:hover {
+    border-color: var(--primary);
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.journal-item {
+    cursor: pointer;
 }
 
 /* Modal Styles */
@@ -182,11 +237,6 @@
     border-color: var(--primary);
 }
 
-.form-group input:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-}
-
 .modal-footer {
     display: flex;
     justify-content: flex-end;
@@ -194,19 +244,12 @@
     margin-top: 1rem;
 }
 
-.text-truncate {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 200px;
-}
-
-.text-danger {
-    color: var(--danger) !important;
-}
-
 .animate-spin {
     animation: spin 1s linear infinite;
+}
+
+.animate-fade-in {
+    animation: fadeIn 0.3s ease-out;
 }
 
 @keyframes spin {
@@ -216,5 +259,23 @@
 
     to {
         transform: rotate(360deg);
+    }
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@media (max-width: 900px) {
+    .agent-details-sections {
+        grid-template-columns: 1fr;
     }
 }
