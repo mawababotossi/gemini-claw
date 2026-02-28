@@ -14,8 +14,9 @@ export function Agents() {
         model: 'gemini-2.0-flash',
         modelCallback: 'gemini-1.5-flash',
         fallbackModels: ['gemini-1.5-pro'],
-        skills: []
+        allowedPermissions: []
     });
+    const [availableSkills, setAvailableSkills] = useState<{ native: any[], project: any[] }>({ native: [], project: [] });
 
     const [expandedAgent, setExpandedAgent] = useState<string | null>(null);
     const [agentJobs, setAgentJobs] = useState<any[]>([]);
@@ -43,9 +44,19 @@ export function Agents() {
         }
     };
 
+    const fetchSkills = async () => {
+        try {
+            const data = await api.getSkills();
+            setAvailableSkills(data);
+        } catch (err) {
+            console.error('Failed to fetch skills', err);
+        }
+    };
+
     useEffect(() => {
         fetchAgents();
         fetchModels();
+        fetchSkills();
     }, []);
 
     const handleOpenModal = (agent?: AgentConfig) => {
@@ -59,7 +70,7 @@ export function Agents() {
                 model: 'gemini-2.0-flash',
                 modelCallback: 'gemini-1.5-flash',
                 fallbackModels: ['gemini-1.5-pro'],
-                skills: []
+                allowedPermissions: []
             });
         }
         setIsModalOpen(true);
@@ -182,11 +193,16 @@ export function Agents() {
                                     <span className="value text-sm text-muted" title={agent.baseDir}>{agent.baseDir}</span>
                                 </div>
                                 <div className="info-row">
-                                    <span className="label">Skills</span>
+                                    <span className="label">Capabilities</span>
                                     <div className="skills-list">
-                                        {agent.skills?.length ? agent.skills.map(skill => (
-                                            <span key={skill} className="skill-chip">{skill}</span>
-                                        )) : <span className="text-muted">No skills</span>}
+                                        {agent.allowedPermissions?.length ? agent.allowedPermissions.map(perm => {
+                                            const isNative = availableSkills.native.some(s => s.name === perm);
+                                            return (
+                                                <span key={perm} className={`skill-chip ${isNative ? 'native' : 'project'}`}>
+                                                    {isNative ? '🛠️' : '🧩'} {perm}
+                                                </span>
+                                            );
+                                        }) : <span className="text-muted">No skills enabled</span>}
                                     </div>
                                 </div>
 
@@ -306,6 +322,59 @@ export function Agents() {
                                     Modèle de secours immédiat en cas d'erreur du modèle principal.
                                 </p>
                             </div>
+
+                            <div className="form-group">
+                                <label style={{ marginBottom: '1rem', display: 'block' }}>Agent Capabilities (Permissions)</label>
+
+                                <div className="skills-selectors-grid">
+                                    <div className="skill-category">
+                                        <h5 className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: 'var(--text-muted)' }}>🛠️ Native (Gemini CLI)</h5>
+                                        <div className="checkbox-group">
+                                            {availableSkills.native.map(skill => (
+                                                <label key={skill.name} className="checkbox-label" title={skill.description}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={formData.allowedPermissions?.includes(skill.name)}
+                                                        onChange={(e) => {
+                                                            const perms = formData.allowedPermissions || [];
+                                                            if (e.target.checked) {
+                                                                setFormData({ ...formData, allowedPermissions: [...perms, skill.name] });
+                                                            } else {
+                                                                setFormData({ ...formData, allowedPermissions: perms.filter(p => p !== skill.name) });
+                                                            }
+                                                        }}
+                                                    />
+                                                    <span className="checkbox-text">{skill.name}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div className="skill-category">
+                                        <h5 className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: 'var(--text-muted)' }}>🧩 Project Skills (Internal)</h5>
+                                        <div className="checkbox-group">
+                                            {availableSkills.project.map(skill => (
+                                                <label key={skill.name} className="checkbox-label" title={skill.description}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={formData.allowedPermissions?.includes(skill.name)}
+                                                        onChange={(e) => {
+                                                            const perms = formData.allowedPermissions || [];
+                                                            if (e.target.checked) {
+                                                                setFormData({ ...formData, allowedPermissions: [...perms, skill.name] });
+                                                            } else {
+                                                                setFormData({ ...formData, allowedPermissions: perms.filter(p => p !== skill.name) });
+                                                            }
+                                                        }}
+                                                    />
+                                                    <span className="checkbox-text">{skill.name}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
                             <div className="modal-footer">
                                 <button type="button" className="btn btn-outline" onClick={() => setIsModalOpen(false)}>
                                     Cancel

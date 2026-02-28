@@ -249,6 +249,12 @@ async function main(): Promise<void> {
         res.json(agents);
     });
 
+    // API: List available skills
+    app.get('/api/skills', (req, res) => {
+        const skills = gateway.listAvailableSkills();
+        res.json(skills);
+    });
+
     // API: List available models
     app.get('/api/models', (req, res) => {
         const models = gateway.listAvailableModels();

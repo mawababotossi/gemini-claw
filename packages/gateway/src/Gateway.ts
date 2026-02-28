@@ -607,6 +607,27 @@ export class Gateway implements IGateway {
         return this.config;
     }
 
+    /**
+     * List all available skills, categorized by native and project.
+     */
+    listAvailableSkills(): { native: any[], project: any[] } {
+        const native = [
+            { name: 'gmail', description: 'Read and send emails via Gmail.', type: 'native' },
+            { name: 'google_calendar', description: 'Manage calendar events.', type: 'native' },
+            { name: 'google_web_search', description: 'Search the web using Google Search.', type: 'native' },
+            { name: 'shell', description: 'Execute shell commands on the host system.', type: 'native' },
+            { name: 'terminal', description: 'Interact with terminal-based tools.', type: 'native' }
+        ];
+
+        const project = (this.skillRegistry.getDeclarations() || []).map(d => ({
+            name: d.name,
+            description: d.description,
+            type: 'project'
+        }));
+
+        return { native, project };
+    }
+
     async shutdown(): Promise<void> {
         await this.registry.shutdown();
         this.sessions.close();

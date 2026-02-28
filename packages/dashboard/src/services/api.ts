@@ -19,7 +19,7 @@ export interface AgentConfig {
     modelCallback?: string;
     fallbackModels?: string[];
     maxHistoryMessages?: number;
-    skills?: string[];
+    allowedPermissions?: string[];
     baseDir?: string;
     status?: 'Healthy' | 'Unresponsive' | 'Restarting' | 'Dead';
 }
@@ -109,5 +109,10 @@ export const api = {
     async getAgentMemoryContent(agentName: string, filename: string): Promise<string> {
         const response = await axios.get(`${API_BASE_URL}/agents/${agentName}/memory/${filename}`);
         return response.data.content;
+    },
+
+    async getSkills(): Promise<{ native: any[], project: any[] }> {
+        const response = await axios.get(`${API_BASE_URL}/skills`);
+        return response.data;
     }
 };

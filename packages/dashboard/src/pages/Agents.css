@@ -84,12 +84,25 @@
 }
 
 .skill-chip {
-    background: color-mix(in srgb, var(--primary) 15%, transparent);
-    color: var(--primary);
-    border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent);
-    padding: 0.25rem 0.75rem;
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    padding: 0.2rem 0.6rem;
     border-radius: var(--radius-sm);
-    font-size: 0.8rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.skill-chip.native {
+    background: rgba(59, 130, 246, 0.1);
+    color: #60a5fa;
+    border-color: rgba(59, 130, 246, 0.2);
+}
+
+.skill-chip.project {
+    background: rgba(139, 92, 246, 0.1);
+    color: #a78bfa;
+    border-color: rgba(139, 92, 246, 0.2);
 }
 
 .agent-footer {
@@ -169,11 +182,13 @@
 
 .modal-content {
     width: 100%;
-    max-width: 500px;
+    max-width: 700px;
     padding: 2rem;
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
+    max-height: 90vh;
+    overflow-y: auto;
 }
 
 .modal-header {
