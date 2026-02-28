@@ -161,6 +161,11 @@ CRITICAL: You are an autonomous agent running within the GeminiClaw platform.
         let responseText = '';
         let thoughtChunks = '';
 
+        // OpenClaw-inspired robust typing: refresh indicator every 3s to prevent timeout
+        const typingInterval = setInterval(() => {
+            this.emitTyping(msg.sessionId);
+        }, this.TYPING_THROTTLE_MS);
+
         try {
             // Emit typing right away
             this.emitTyping(msg.sessionId);
@@ -177,6 +182,8 @@ CRITICAL: You are an autonomous agent running within the GeminiClaw platform.
         } catch (err: any) {
             console.error('[core/runtime] ACP Prompt error:', err);
             return await this.tryFallbacks(msg, err);
+        } finally {
+            clearInterval(typingInterval);
         }
 
         // Persist the initial user message if it's new (or always if we want full history)
