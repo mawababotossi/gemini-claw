@@ -143,7 +143,14 @@ CRITICAL: You are an autonomous agent running within the GeminiClaw platform.
         const bridge = await this.getBridge(msg.sessionId);
 
         const isNewSession = !this.sessionMap.has(msg.sessionId);
-        const acpSessionId = await this.getSessionId(msg.sessionId, bridge);
+        const secret = process.env['DASHBOARD_SECRET'] || '';
+        const mcpServers = (this.config.mcpServers || []).map(s => {
+            if (!secret || s.url.includes('token=')) return s;
+            const separator = s.url.includes('?') ? '&' : '?';
+            return { ...s, url: `${s.url}${separator}token=${secret}` };
+        });
+
+        const acpSessionId = await this.getSessionId(msg.sessionId, bridge, mcpServers);
 
         let promptText = msg.text;
         const systemPrompt = this.loadSystemPrompt(peerAgents);

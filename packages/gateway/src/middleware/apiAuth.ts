@@ -25,12 +25,18 @@ export function requireApiToken(req: Request, res: Response, next: NextFunction)
     }
 
     const authHeader = req.headers['authorization'];
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        res.status(401).json({ error: 'Missing or invalid Authorization header. Expected: Bearer <token>' });
-        return;
+    let providedToken: string | undefined;
+
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        providedToken = authHeader.slice('Bearer '.length);
+    } else if (req.query['token'] && typeof req.query['token'] === 'string') {
+        providedToken = req.query['token'];
     }
 
-    const providedToken = authHeader.slice('Bearer '.length);
+    if (!providedToken) {
+        res.status(401).json({ error: 'Missing or invalid authentication. Provide Bearer token or ?token= query parameter.' });
+        return;
+    }
 
     try {
         // Constant-time comparison to prevent timing attacks
@@ -41,7 +47,7 @@ export function requireApiToken(req: Request, res: Response, next: NextFunction)
             return next();
         }
     } catch (err) {
-        // Fallback for length mismatch or other errors
+        // Fallback or error handling
     }
 
     console.warn(`[api/auth] Unauthorized access attempt from ${req.ip}`);

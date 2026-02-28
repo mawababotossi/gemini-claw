@@ -233,11 +233,29 @@ export class ACPBridge {
     }
 
     private handlePermissionRequest(msg: any): void {
-        const requestedAction: string =
-            msg.params?.toolName
-            ?? msg.params?.action
-            ?? msg.params?.options?.[0]?.label
-            ?? 'unknown';
+        const toolCall = msg.params?.toolCall;
+        let requestedAction = 'unknown';
+
+        if (toolCall) {
+            // Extract from toolCallId (e.g., "getCurrentTime-123") or title (JSON string or tool name)
+            const idMatch = toolCall.toolCallId?.split('-')[0];
+            if (idMatch) {
+                requestedAction = idMatch;
+            } else if (toolCall.title) {
+                try {
+                    // Title for tools is often the JSON arguments, but might be tool name
+                    const parsed = JSON.parse(toolCall.title);
+                    // If it's an object, it's arguments, so we rely on ID. 
+                    // If parsing fails or it's just a string, it might be the name.
+                } catch {
+                    requestedAction = toolCall.title;
+                }
+            }
+        } else if (msg.params?.action) {
+            requestedAction = msg.params.action;
+        } else if (msg.params?.options?.[0]?.label) {
+            requestedAction = msg.params.options[0].label;
+        }
 
         const isAllowed = this.allowedPermissions.some(
             (perm) => requestedAction.toLowerCase().includes(perm.toLowerCase())

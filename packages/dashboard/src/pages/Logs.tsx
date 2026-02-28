@@ -13,7 +13,8 @@ export function Logs() {
     const logsEndRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
-        const eventSource = new EventSource(`http://${window.location.hostname}:3002/api/logs/stream`);
+        const secret = import.meta.env.VITE_DASHBOARD_SECRET || '';
+        const eventSource = new EventSource(`http://${window.location.hostname}:3002/api/logs/stream?token=${secret}`);
 
         eventSource.onmessage = (event) => {
             try {
