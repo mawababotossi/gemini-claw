@@ -1,40 +1,426 @@
-import { useState, useEffect } from 'react';
+/**
+ * @license Apache-2.0
+ * GeminiClaw Dashboard — Skills Page (Refonte v2)
+ *
+ * Changements majeurs vs v1 :
+ * - Vue unifiée : native / prompt / mcp dans un seul flux de liste
+ * - Scoping par agent : filtre par agent sélectionné
+ * - Désactivation manuelle (toggle) via POST /api/skills/:name/disable|enable
+ * - Assignation skill ↔ agent via PATCH /api/agents/:name/skills
+ * - Badge "assigned" par agent
+ * - Modale de config enrichie (affiche les binaires manquants + liens)
+ * - Compteurs par catégorie dans les accordion headers
+ * - Recherche unifiée cross-catégories
+ */
+
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { api } from '../services/api';
-import { RefreshCw, Wrench, Puzzle, Shield, Terminal, Download, CheckCircle2, AlertCircle, Settings, X, Save } from 'lucide-react';
+import type { AgentConfig, SkillManifest } from '../services/api';
+import {
+    RefreshCw, Wrench, Terminal, Puzzle,
+    CheckCircle2, AlertCircle, XCircle,
+    Settings, X, Save, ChevronDown, ChevronRight,
+    Power, PowerOff, Download, Search, Bot, Link
+} from 'lucide-react';
 import './Skills.css';
 
-export function Skills() {
-    const [skills, setSkills] = useState<{ native: any[], project: any[], prompt: any[] }>({ native: [], project: [], prompt: [] });
-    const [isLoading, setIsLoading] = useState(true);
-    const [isInstalling, setIsInstalling] = useState<string | null>(null);
-    const [installResult, setInstallResult] = useState<{ name: string, success: boolean, output: string } | null>(null);
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-    // Config Modal State
-    const [configSkill, setConfigSkill] = useState<any | null>(null);
-    const [envVars, setEnvVars] = useState<Record<string, string>>({});
+const KIND_META: Record<SkillManifest['kind'], { label: string; icon: React.ReactNode; color: string }> = {
+    native: { label: 'Native', icon: <Wrench size={11} />, color: 'var(--primary)' },
+    mcp: { label: 'MCP', icon: <Puzzle size={11} />, color: 'var(--accent)' },
+    prompt: { label: 'Prompt', icon: <Terminal size={11} />, color: '#a78bfa' },
+};
+
+const STATUS_META: Record<SkillManifest['status'], { label: string; color: string; icon: React.ReactNode }> = {
+    enabled: { label: 'Eligible', color: 'var(--success)', icon: <CheckCircle2 size={12} /> },
+    disabled: { label: 'Blocked', color: 'var(--danger)', icon: <XCircle size={12} /> },
+    'needs-config': { label: 'Needs Config', color: 'var(--warning)', icon: <AlertCircle size={12} /> },
+    'needs-install': { label: 'Needs Install', color: '#f97316', icon: <Download size={12} /> },
+};
+
+function kindIcon(kind: SkillManifest['kind']) {
+    const m = KIND_META[kind];
+    return (
+        <span className="skill-kind-badge" style={{ '--kind-color': m.color } as React.CSSProperties}>
+            {m.icon} {m.label}
+        </span>
+    );
+}
+
+function statusBadge(status: SkillManifest['status']) {
+    const m = STATUS_META[status];
+    return (
+        <span className="skill-status-badge" style={{ '--status-color': m.color } as React.CSSProperties}>
+            {m.icon} {m.label}
+        </span>
+    );
+}
+
+// ─── Accordion Section ────────────────────────────────────────────────────────
+
+function SkillSection({
+    title, icon, count, defaultOpen = true, children
+}: {
+    title: string;
+    icon: React.ReactNode;
+    count: number;
+    defaultOpen?: boolean;
+    children: React.ReactNode;
+}) {
+    const [open, setOpen] = useState(defaultOpen);
+    return (
+        <div className="skill-section">
+            <button className="skill-section-header" onClick={() => setOpen(o => !o)}>
+                <span className="skill-section-icon">{icon}</span>
+                <span className="skill-section-title">{title}</span>
+                <span className="skill-section-count">{count}</span>
+                <span className="skill-section-chevron">
+                    {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                </span>
+            </button>
+            {open && <div className="skill-section-body">{children}</div>}
+        </div>
+    );
+}
+
+// ─── Skill Row ────────────────────────────────────────────────────────────────
+
+interface SkillRowProps {
+    skill: SkillManifest;
+    agents: AgentConfig[];
+    selectedAgent: string | null;
+    onConfigure: (skill: SkillManifest) => void;
+    onInstall: (name: string) => void;
+    onToggleDisable: (name: string, currentlyDisabled: boolean) => void;
+    onToggleAssign: (skillName: string, agentName: string, currentlyAssigned: boolean) => void;
+    isInstalling: boolean;
+}
+
+function SkillRow({
+    skill, agents, selectedAgent, onConfigure, onInstall,
+    onToggleDisable, onToggleAssign, isInstalling
+}: SkillRowProps) {
+    const [expanded, setExpanded] = useState(false);
+
+    const effectiveStatus: SkillManifest['status'] = skill.manuallyDisabled ? 'disabled' : skill.status;
+    const isBlocked = effectiveStatus === 'disabled' || effectiveStatus === 'needs-config' || effectiveStatus === 'needs-install';
+
+    // Check if assigned to the currently-filtered agent
+    const isAssigned = selectedAgent
+        ? (skill.assignedAgents ?? []).includes(selectedAgent)
+        : false;
+
+    const showAssignToggle = selectedAgent && skill.kind !== 'native';
+
+    return (
+        <div className={`skill-row ${isBlocked ? 'skill-row--blocked' : ''} ${isAssigned ? 'skill-row--assigned' : ''}`}>
+            {/* Accent bar for assigned skills */}
+            {isAssigned && <div className="skill-row-accent" />}
+
+            <div className="skill-row-main" onClick={() => setExpanded(e => !e)}>
+                {/* Icon */}
+                <div className="skill-row-icon" style={{
+                    background: isBlocked ? 'rgba(255,255,255,0.04)' : `${KIND_META[skill.kind].color}18`
+                }}>
+                    <span style={{ fontSize: '1rem' }}>{skill.icon || (skill.kind === 'native' ? '🛠️' : skill.kind === 'mcp' ? '🔌' : '📖')}</span>
+                </div>
+
+                {/* Info */}
+                <div className="skill-row-info">
+                    <div className="skill-row-nameline">
+                        <span className="skill-row-name">{skill.name}</span>
+                        {kindIcon(skill.kind)}
+                        {statusBadge(effectiveStatus)}
+                        {isAssigned && selectedAgent && (
+                            <span className="skill-assigned-tag">
+                                <Bot size={10} /> {selectedAgent}
+                            </span>
+                        )}
+                    </div>
+                    <p className="skill-row-desc">{skill.description}</p>
+                    {/* Missing deps inline */}
+                    {(skill.missingEnv?.length ?? 0) > 0 && (
+                        <p className="skill-row-missing">
+                            Missing env: {skill.missingEnv!.map(k => <code key={k}>{k}</code>)}
+                        </p>
+                    )}
+                    {(skill.missingBins?.length ?? 0) > 0 && (
+                        <p className="skill-row-missing">
+                            Missing binaries: {skill.missingBins!.map(b => <code key={b}>{b}</code>)}
+                        </p>
+                    )}
+                </div>
+
+                {/* Actions */}
+                <div className="skill-row-actions" onClick={e => e.stopPropagation()}>
+                    {/* Assign to agent toggle */}
+                    {showAssignToggle && effectiveStatus === 'enabled' && (
+                        <button
+                            className={`btn btn-xs ${isAssigned ? 'btn-outline' : 'btn-primary'}`}
+                            onClick={() => onToggleAssign(skill.name, selectedAgent!, isAssigned)}
+                            title={isAssigned ? `Remove from ${selectedAgent}` : `Assign to ${selectedAgent}`}
+                        >
+                            <Bot size={11} />
+                            {isAssigned ? 'Unassign' : 'Assign'}
+                        </button>
+                    )}
+
+                    {/* Config button */}
+                    {effectiveStatus === 'needs-config' && (
+                        <button className="btn btn-xs btn-warning" onClick={() => onConfigure(skill)}>
+                            <Settings size={11} /> Configure
+                        </button>
+                    )}
+
+                    {/* Install button */}
+                    {effectiveStatus === 'needs-install' && (
+                        <button
+                            className="btn btn-xs btn-primary"
+                            onClick={() => onInstall(skill.name)}
+                            disabled={isInstalling}
+                        >
+                            {isInstalling ? <RefreshCw size={11} className="spin" /> : <Download size={11} />}
+                            Install
+                        </button>
+                    )}
+
+                    {/* Enable / Disable manual toggle (only for enabled or manually disabled) */}
+                    {(effectiveStatus === 'enabled' || skill.manuallyDisabled) && skill.kind !== 'native' && (
+                        <button
+                            className={`btn btn-xs ${skill.manuallyDisabled ? 'btn-success' : 'btn-ghost btn-danger'}`}
+                            onClick={() => onToggleDisable(skill.name, !!skill.manuallyDisabled)}
+                            title={skill.manuallyDisabled ? 'Re-enable skill' : 'Disable skill'}
+                        >
+                            {skill.manuallyDisabled ? <Power size={11} /> : <PowerOff size={11} />}
+                            {skill.manuallyDisabled ? 'Enable' : 'Disable'}
+                        </button>
+                    )}
+
+                    {/* Expand chevron */}
+                    <button className="btn btn-xs btn-ghost" onClick={() => setExpanded(e => !e)}>
+                        {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                    </button>
+                </div>
+            </div>
+
+            {/* Expanded detail */}
+            {expanded && (
+                <div className="skill-row-detail">
+                    {/* Assigned agents list */}
+                    {(skill.assignedAgents?.length ?? 0) > 0 && (
+                        <div className="skill-detail-block">
+                            <span className="skill-detail-label">Assigned to</span>
+                            <div className="skill-detail-tags">
+                                {skill.assignedAgents!.map(a => (
+                                    <span key={a} className="skill-agent-chip">
+                                        <Bot size={10} /> {a}
+                                    </span>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Required env vars (even if present) */}
+                    {(skill.requiredEnv?.length ?? 0) > 0 && (
+                        <div className="skill-detail-block">
+                            <span className="skill-detail-label">Environment variables</span>
+                            <div className="skill-env-list">
+                                {skill.requiredEnv!.map(e => (
+                                    <div key={e.key} className="skill-env-row">
+                                        <code className={`skill-env-key ${skill.missingEnv?.includes(e.key) ? 'missing' : 'present'}`}>
+                                            {e.key}
+                                        </code>
+                                        {e.description && <span className="skill-env-desc">{e.description}</span>}
+                                        {e.url && (
+                                            <a href={e.url} target="_blank" rel="noopener noreferrer" className="skill-env-link">
+                                                <Link size={10} /> Get key
+                                            </a>
+                                        )}
+                                        <span className={`skill-env-status ${skill.missingEnv?.includes(e.key) ? 'missing' : 'ok'}`}>
+                                            {skill.missingEnv?.includes(e.key) ? '✗ missing' : '✓ set'}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* MCP parameters */}
+                    {skill.parameters && (
+                        <div className="skill-detail-block">
+                            <span className="skill-detail-label">Parameters</span>
+                            <pre className="skill-detail-json">
+                                {JSON.stringify(skill.parameters, null, 2)}
+                            </pre>
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ─── Config Modal ─────────────────────────────────────────────────────────────
+
+function ConfigModal({
+    skill,
+    onClose,
+    onSave,
+    isSaving
+}: {
+    skill: SkillManifest;
+    onClose: () => void;
+    onSave: (envVars: Record<string, string>) => void;
+    isSaving: boolean;
+}) {
+    const [envVars, setEnvVars] = useState<Record<string, string>>(() => {
+        const init: Record<string, string> = {};
+        skill.requiredEnv?.forEach(e => { init[e.key] = ''; });
+        return init;
+    });
+
+    const allFilled = skill.requiredEnv?.every(e => envVars[e.key]?.trim()) ?? true;
+
+    return (
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal-card" onClick={e => e.stopPropagation()}>
+                <div className="modal-header">
+                    <div className="modal-title-group">
+                        <Settings size={16} className="text-warning" />
+                        <span>Configure <strong>{skill.name}</strong></span>
+                    </div>
+                    <button className="btn btn-ghost btn-sm" onClick={onClose}><X size={16} /></button>
+                </div>
+
+                <div className="modal-body">
+                    <p className="modal-hint">
+                        Enter the required API keys and environment variables.
+                        These will be saved to your <code>.env</code> file and applied immediately.
+                    </p>
+
+                    {skill.requiredEnv?.map(env => (
+                        <div key={env.key} className="modal-field">
+                            <label className="modal-field-label">
+                                <span>{env.key}</span>
+                                {env.url && (
+                                    <a href={env.url} target="_blank" rel="noopener noreferrer" className="modal-get-key">
+                                        <Link size={10} /> Get key
+                                    </a>
+                                )}
+                            </label>
+                            {env.description && <p className="modal-field-desc">{env.description}</p>}
+                            <input
+                                type={env.secret !== false ? 'password' : 'text'}
+                                className="form-input"
+                                placeholder={`Enter ${env.key}...`}
+                                value={envVars[env.key] ?? ''}
+                                onChange={e => setEnvVars(v => ({ ...v, [env.key]: e.target.value }))}
+                                autoComplete="off"
+                            />
+                        </div>
+                    ))}
+                </div>
+
+                <div className="modal-footer">
+                    <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+                    <button
+                        className="btn btn-primary"
+                        onClick={() => onSave(envVars)}
+                        disabled={!allFilled || isSaving}
+                    >
+                        {isSaving ? <RefreshCw size={14} className="spin" /> : <Save size={14} />}
+                        Save & Apply
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ─── Install Result Toast ──────────────────────────────────────────────────────
+
+function InstallToast({ result, onClose }: {
+    result: { name: string; success: boolean; output: string };
+    onClose: () => void;
+}) {
+    return (
+        <div className={`install-toast ${result.success ? 'success' : 'error'}`}>
+            <div className="install-toast-header">
+                {result.success
+                    ? <CheckCircle2 size={16} className="text-success" />
+                    : <XCircle size={16} className="text-danger" />}
+                <span>{result.success ? 'Installed' : 'Failed'}: <strong>{result.name}</strong></span>
+                <button className="btn btn-xs btn-ghost ml-auto" onClick={onClose}><X size={14} /></button>
+            </div>
+            <pre className="install-toast-output">{result.output}</pre>
+        </div>
+    );
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
+
+export function Skills() {
+    // Data
+    const [manifests, setManifests] = useState<SkillManifest[]>([]);
+    const [agents, setAgents] = useState<AgentConfig[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+
+    // Filters
+    const [search, setSearch] = useState('');
+    const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
+
+    // UI state
+    const [isInstalling, setIsInstalling] = useState<string | null>(null);
+    const [installResult, setInstallResult] = useState<{ name: string; success: boolean; output: string } | null>(null);
+    const [configSkill, setConfigSkill] = useState<SkillManifest | null>(null);
     const [isConfiguring, setIsConfiguring] = useState(false);
 
-    const fetchSkills = async () => {
+    // ── Fetch ──────────────────────────────────────────────────────────────────
+
+    const fetchAll = useCallback(async () => {
+        setIsLoading(true);
         try {
-            setIsLoading(true);
-            const data = await api.getSkills();
-            setSkills(data);
+            const [skillsData, agentsData] = await Promise.all([
+                api.getSkillManifests(selectedAgent ?? undefined),
+                api.getAgents(),
+            ]);
+            setManifests(skillsData);
+            setAgents(agentsData);
         } catch (err) {
-            console.error('Failed to fetch skills', err);
+            console.error('Failed to fetch skills/agents', err);
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [selectedAgent]);
+
+    useEffect(() => { fetchAll(); }, [fetchAll]);
+
+    // ── Filtered / grouped ────────────────────────────────────────────────────
+
+    const { native, mcp, prompt } = useMemo(() => {
+        const q = search.toLowerCase().trim();
+        const filtered = manifests.filter(s =>
+            !q || s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q)
+        );
+        return {
+            native: filtered.filter(s => s.kind === 'native'),
+            mcp: filtered.filter(s => s.kind === 'mcp'),
+            prompt: filtered.filter(s => s.kind === 'prompt'),
+        };
+    }, [manifests, search]);
+
+    const totalVisible = native.length + mcp.length + prompt.length;
+
+    // ── Handlers ──────────────────────────────────────────────────────────────
 
     const handleInstall = async (name: string) => {
+        setIsInstalling(name);
+        setInstallResult(null);
         try {
-            setIsInstalling(name);
-            setInstallResult(null);
             const result = await api.installSkill(name);
             setInstallResult({ name, ...result });
-            if (result.success) {
-                await fetchSkills();
-            }
+            if (result.success) await fetchAll();
         } catch (err: any) {
             setInstallResult({ name, success: false, output: err.message });
         } finally {
@@ -42,22 +428,13 @@ export function Skills() {
         }
     };
 
-    const handleOpenConfig = (skill: any) => {
-        const initialEnv: Record<string, string> = {};
-        skill.requiredEnv.forEach((env: any) => {
-            initialEnv[env.key] = '';
-        });
-        setEnvVars(initialEnv);
-        setConfigSkill(skill);
-    };
-
-    const handleSaveConfig = async () => {
+    const handleSaveConfig = async (envVars: Record<string, string>) => {
         if (!configSkill) return;
+        setIsConfiguring(true);
         try {
-            setIsConfiguring(true);
             await api.configureSkill(configSkill.name, envVars);
             setConfigSkill(null);
-            await fetchSkills();
+            await fetchAll();
         } catch (err) {
             console.error('Failed to configure skill', err);
         } finally {
@@ -65,231 +442,197 @@ export function Skills() {
         }
     };
 
-    useEffect(() => {
-        fetchSkills();
-    }, []);
+    const handleToggleDisable = async (name: string, currentlyDisabled: boolean) => {
+        try {
+            if (currentlyDisabled) {
+                await api.enableSkill(name);
+            } else {
+                await api.disableSkill(name);
+            }
+            // Optimistic update
+            setManifests(prev => prev.map(s =>
+                s.name === name ? { ...s, manuallyDisabled: !currentlyDisabled } : s
+            ));
+        } catch (err) {
+            console.error('Failed to toggle skill', err);
+            await fetchAll(); // rollback
+        }
+    };
+
+    const handleToggleAssign = async (skillName: string, agentName: string, currentlyAssigned: boolean) => {
+        // Get current agent skills
+        const agent = agents.find(a => a.name === agentName);
+        if (!agent) return;
+        const current = agent.skills ?? [];
+        const updated = currentlyAssigned
+            ? current.filter(s => s !== skillName)
+            : [...current, skillName];
+        try {
+            await api.updateAgentSkills(agentName, updated);
+            // Optimistic update on manifests
+            setManifests(prev => prev.map(s => {
+                if (s.name !== skillName) return s;
+                const assigned = s.assignedAgents ?? [];
+                return {
+                    ...s,
+                    assignedAgents: currentlyAssigned
+                        ? assigned.filter(a => a !== agentName)
+                        : [...assigned, agentName]
+                };
+            }));
+            // Also update local agents
+            setAgents(prev => prev.map(a =>
+                a.name === agentName ? { ...a, skills: updated } : a
+            ));
+        } catch (err) {
+            console.error('Failed to update agent skills', err);
+            await fetchAll();
+        }
+    };
+
+    const rowProps = (skill: SkillManifest) => ({
+        skill,
+        agents,
+        selectedAgent,
+        onConfigure: setConfigSkill,
+        onInstall: handleInstall,
+        onToggleDisable: handleToggleDisable,
+        onToggleAssign: handleToggleAssign,
+        isInstalling: isInstalling === skill.name,
+    });
+
+    // ── Render ─────────────────────────────────────────────────────────────────
 
     return (
         <div className="page-container skills-page">
-            <div className="page-header mb-8 flex justify-between items-center">
+            {/* Header */}
+            <div className="skills-header">
                 <div>
-                    <h1 style={{ fontSize: '1.75rem', fontWeight: 700 }}>Skills & Tools</h1>
-                    <p className="text-muted text-sm">Overview of all capabilities available to agents.</p>
+                    <h1 className="skills-title">Skills & Tools</h1>
+                    <p className="skills-subtitle">Manage skill availability and API key injection.</p>
                 </div>
-                <button className="btn btn-outline btn-sm" onClick={fetchSkills} disabled={isLoading}>
-                    <RefreshCw size={14} className={`mr-2 ${isLoading ? "animate-spin" : ""}`} /> Refresh
+                <button className="btn btn-outline btn-sm" onClick={fetchAll} disabled={isLoading}>
+                    <RefreshCw size={14} className={isLoading ? 'spin' : ''} />
+                    Refresh
                 </button>
             </div>
 
-            {installResult && (
-                <div className={`mb-8 p-4 rounded-lg border flex flex-col gap-2 ${installResult.success ? 'bg-success/10 border-success/30' : 'bg-error/10 border-error/30'}`}>
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                            {installResult.success ? <CheckCircle2 size={18} className="text-success" /> : <AlertCircle size={18} className="text-error" />}
-                            <span className="font-bold">Installation: {installResult.name}</span>
-                        </div>
-                        <button className="btn btn-xs btn-ghost" onClick={() => setInstallResult(null)}>Close</button>
-                    </div>
-                    <pre className="text-xs font-mono bg-black/20 p-2 rounded max-h-40 overflow-auto whitespace-pre-wrap">
-                        {installResult.output}
-                    </pre>
+            {/* Toolbar */}
+            <div className="skills-toolbar">
+                {/* Search */}
+                <div className="skills-search-wrap">
+                    <Search size={14} className="skills-search-icon" />
+                    <input
+                        className="skills-search"
+                        placeholder="Search skills..."
+                        value={search}
+                        onChange={e => setSearch(e.target.value)}
+                    />
+                    {search && (
+                        <button className="skills-search-clear" onClick={() => setSearch('')}>
+                            <X size={12} />
+                        </button>
+                    )}
                 </div>
+
+                {/* Agent filter */}
+                <div className="skills-agent-filter">
+                    <Bot size={14} className="text-muted" />
+                    <select
+                        className="form-select"
+                        value={selectedAgent ?? ''}
+                        onChange={e => setSelectedAgent(e.target.value || null)}
+                    >
+                        <option value="">All agents</option>
+                        {agents.map(a => (
+                            <option key={a.name} value={a.name}>{a.name}</option>
+                        ))}
+                    </select>
+                </div>
+
+                {/* Count */}
+                <span className="skills-count">
+                    {totalVisible} skill{totalVisible !== 1 ? 's' : ''}
+                </span>
+            </div>
+
+            {/* Install result */}
+            {installResult && (
+                <InstallToast result={installResult} onClose={() => setInstallResult(null)} />
             )}
 
+            {/* Content */}
             {isLoading ? (
-                <div className="flex justify-center py-20">
-                    <RefreshCw className="animate-spin text-primary" size={40} />
+                <div className="skills-loading">
+                    <RefreshCw size={32} className="spin text-primary" />
                 </div>
             ) : (
-                <div className="skills-layout flex flex-col gap-8">
-                    {/* Native Skills */}
-                    <div className="skills-section">
-                        <div className="flex items-center gap-3 mb-2">
-                            <div className="p-2 bg-primary/10 rounded-md text-primary">
-                                <Wrench size={20} />
-                            </div>
-                            <h2 className="text-lg font-bold">Native Tools</h2>
+                <div className="skills-list">
+
+                    {/* Prompt Skills (OpenClaw / SKILL.md) */}
+                    {prompt.length > 0 && (
+                        <SkillSection
+                            title="Prompt Skills"
+                            icon={<Terminal size={16} />}
+                            count={prompt.length}
+                            defaultOpen
+                        >
+                            <p className="skill-section-desc">
+                                Prompt-driven instructions injected into the agent's system prompt.
+                                Assign them per agent to control which skills each agent can use.
+                            </p>
+                            {prompt.map(s => <SkillRow key={s.name} {...rowProps(s)} />)}
+                        </SkillSection>
+                    )}
+
+                    {/* MCP / Project Skills */}
+                    {mcp.length > 0 && (
+                        <SkillSection
+                            title="MCP Skills"
+                            icon={<Puzzle size={16} />}
+                            count={mcp.length}
+                            defaultOpen
+                        >
+                            <p className="skill-section-desc">
+                                JavaScript functions exposed as MCP tools. Callable by the agent during ReAct loops.
+                            </p>
+                            {mcp.map(s => <SkillRow key={s.name} {...rowProps(s)} />)}
+                        </SkillSection>
+                    )}
+
+                    {/* Native Tools */}
+                    {native.length > 0 && (
+                        <SkillSection
+                            title="Native Tools"
+                            icon={<Wrench size={16} />}
+                            count={native.length}
+                            defaultOpen={false}
+                        >
+                            <p className="skill-section-desc">
+                                Built-in tools provided by the Gemini CLI core runtime. Always available, not configurable.
+                            </p>
+                            {native.map(s => <SkillRow key={s.name} {...rowProps(s)} />)}
+                        </SkillSection>
+                    )}
+
+                    {totalVisible === 0 && (
+                        <div className="skills-empty">
+                            <Search size={32} className="skills-empty-icon" />
+                            <p>No skills match your search.</p>
+                            <button className="btn btn-ghost btn-sm" onClick={() => setSearch('')}>Clear search</button>
                         </div>
-                        <p className="text-muted text-sm mb-6">Built-in tools provided directly by the Gemini CLI core runtime.</p>
-
-                        <div className="skills-grid grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {skills.native.map(skill => (
-                                <div key={skill.name} className="skill-card glass-card p-4">
-                                    <div className="flex items-start gap-4">
-                                        <div className="skill-icon-flat shrink-0 w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center text-lg">
-                                            {skill.icon || '🛠️'}
-                                        </div>
-                                        <div className="skill-content grow">
-                                            <h3 className="text-sm font-bold mb-1">{skill.name}</h3>
-                                            <p className="text-xs text-muted leading-relaxed">{skill.description}</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                            {skills.native.length === 0 && (
-                                <div className="col-span-full py-8 text-center glass-panel opacity-50">
-                                    <p className="text-sm italic">No native tools found.</p>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* OpenClaw Skills (Prompt-driven) */}
-                    <div className="skills-section">
-                        <div className="flex items-center gap-3 mb-2">
-                            <div className="p-2 bg-accent/10 rounded-md text-accent">
-                                <Terminal size={20} />
-                            </div>
-                            <h2 className="text-lg font-bold">OpenClaw Skills</h2>
-                        </div>
-                        <p className="text-muted text-sm mb-6">Prompt-driven instructions for specific external tools and services.</p>
-
-                        <div className="skills-grid grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {skills.prompt.map(skill => (
-                                <div key={skill.name} className={`skill-card glass-card p-4 ${skill.status !== 'enabled' ? 'opacity-70' : ''}`}>
-                                    <div className="flex items-start gap-4">
-                                        <div className="skill-icon-flat shrink-0 w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center text-lg">
-                                            {skill.icon || '🦞'}
-                                        </div>
-                                        <div className="skill-content grow">
-                                            <div className="flex items-center justify-between mb-1">
-                                                <h3 className="text-sm font-bold flex items-center gap-2">
-                                                    {skill.name}
-                                                    {skill.status === 'enabled' ? (
-                                                        <CheckCircle2 size={12} className="text-success" />
-                                                    ) : (
-                                                        <AlertCircle size={12} className={skill.status === 'needs-config' ? "text-warning" : "text-error"} />
-                                                    )}
-                                                </h3>
-
-                                                {skill.status === 'needs-config' && (
-                                                    <button
-                                                        className="btn btn-xs btn-outline btn-warning gap-1"
-                                                        onClick={() => handleOpenConfig(skill)}
-                                                    >
-                                                        <Settings size={10} />
-                                                        Configure
-                                                    </button>
-                                                )}
-
-                                                {skill.status === 'needs-install' && (
-                                                    <button
-                                                        className="btn btn-xs btn-primary gap-1"
-                                                        onClick={() => handleInstall(skill.name)}
-                                                        disabled={isInstalling !== null}
-                                                    >
-                                                        {isInstalling === skill.name ? <RefreshCw size={10} className="animate-spin" /> : <Download size={10} />}
-                                                        Install
-                                                    </button>
-                                                )}
-                                            </div>
-                                            <p className="text-xs text-muted leading-relaxed mb-2">{skill.description}</p>
-                                            {skill.status !== 'enabled' && (
-                                                <div className={`text-[10px] p-1 rounded border italic ${skill.status === 'needs-config' ? 'bg-warning/10 text-warning border-warning/20' : 'bg-red-500/10 text-red-400 border-red-500/20'}`}>
-                                                    {skill.reason}
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                            {skills.prompt.length === 0 && (
-                                <div className="col-span-full py-8 text-center glass-panel opacity-50">
-                                    <p className="text-sm italic">No OpenClaw skills found.</p>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Project Skills */}
-                    <div className="skills-section">
-                        <div className="flex items-center gap-3 mb-2">
-                            <div className="p-2 bg-secondary/10 rounded-md text-secondary">
-                                <Puzzle size={20} />
-                            </div>
-                            <h2 className="text-lg font-bold">Project Skills (MCP)</h2>
-                        </div>
-                        <p className="text-muted text-sm mb-6">Custom capabilities loaded via local Model Context Protocol (MCP) servers.</p>
-
-                        <div className="skills-grid grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {skills.project.map(skill => (
-                                <div key={skill.name} className="skill-card glass-card p-4">
-                                    <div className="flex items-start gap-4">
-                                        <div className="skill-icon-flat shrink-0 w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center text-lg">
-                                            {skill.icon || '🧩'}
-                                        </div>
-                                        <div className="skill-content grow">
-                                            <div className="flex items-center justify-between mb-1">
-                                                <h3 className="text-sm font-bold">{skill.name}</h3>
-                                                <Shield size={12} className="text-muted opacity-40" />
-                                            </div>
-                                            <p className="text-xs text-muted leading-relaxed">{skill.description || 'Custom project capability'}</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                            {skills.project.length === 0 && (
-                                <div className="col-span-full py-8 text-center glass-panel opacity-50">
-                                    <p className="text-sm italic">No custom project skills currently active.</p>
-                                </div>
-                            )}
-                        </div>
-                    </div>
+                    )}
                 </div>
             )}
 
             {/* Config Modal */}
             {configSkill && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-                    <div className="glass-card w-full max-w-md flex flex-col overflow-hidden shadow-2xl animate-in zoom-in duration-200">
-                        <div className="p-4 border-b border-white/10 flex justify-between items-center bg-white/5">
-                            <h3 className="font-bold flex items-center gap-2">
-                                <Settings size={18} className="text-warning" />
-                                Configure {configSkill.name}
-                            </h3>
-                            <button className="btn btn-ghost btn-sm p-1" onClick={() => setConfigSkill(null)}>
-                                <X size={18} />
-                            </button>
-                        </div>
-
-                        <div className="p-6 flex flex-col gap-4">
-                            <p className="text-xs text-muted mb-2">
-                                Enter the required environment variables for this skill. These will be saved to your <code>.env</code> file.
-                            </p>
-
-                            {configSkill.requiredEnv.map((env: any) => (
-                                <div key={env.key} className="flex flex-col gap-1.5">
-                                    <label className="text-xs font-bold text-muted flex justify-between">
-                                        {env.key}
-                                        {env.url && (
-                                            <a href={env.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-normal">Get Key</a>
-                                        )}
-                                    </label>
-                                    <input
-                                        type={env.secret ? "password" : "text"}
-                                        className="input input-sm bg-white/5 border-white/10 focus:border-primary/50 text-sm"
-                                        placeholder={env.description || `Value for ${env.key}`}
-                                        value={envVars[env.key] || ''}
-                                        onChange={(e) => setEnvVars({ ...envVars, [env.key]: e.target.value })}
-                                    />
-                                    {env.description && <span className="text-[10px] text-muted/60">{env.description}</span>}
-                                </div>
-                            ))}
-                        </div>
-
-                        <div className="p-4 border-t border-white/10 flex justify-end gap-2 bg-white/5">
-                            <button className="btn btn-ghost btn-sm" onClick={() => setConfigSkill(null)}>Cancel</button>
-                            <button
-                                className="btn btn-primary btn-sm gap-2"
-                                onClick={handleSaveConfig}
-                                disabled={isConfiguring}
-                            >
-                                {isConfiguring ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
-                                Save Configuration
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                <ConfigModal
+                    skill={configSkill}
+                    onClose={() => setConfigSkill(null)}
+                    onSave={handleSaveConfig}
+                    isSaving={isConfiguring}
+                />
             )}
         </div>
     );

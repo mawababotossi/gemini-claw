@@ -65,6 +65,21 @@ export interface GlobalConfig {
     gatewayPort?: number;
 }
 
+export interface SkillManifest {
+    name: string;
+    description: string;
+    kind: 'prompt' | 'mcp' | 'native';
+    status: 'enabled' | 'disabled' | 'needs-config' | 'needs-install';
+    requiredEnv?: { key: string; description?: string; secret?: boolean; url?: string }[];
+    missingEnv?: string[];
+    missingBins?: string[];
+    reason?: string;
+    parameters?: any;
+    manuallyDisabled?: boolean;
+    assignedAgents?: string[];
+    icon?: string;
+}
+
 export const api = {
     async getStatus(): Promise<AppStatus> {
         const response = await axios.get(`${API_BASE_URL}/status`);
@@ -129,8 +144,26 @@ export const api = {
         await axios.put(`${API_BASE_URL}/agents/${agentName}/memory/${filename}`, { content });
     },
 
+    /**
+     * Récupère la liste unifiée des skills (prompt + mcp + native)
+     */
+    async getSkillManifests(agentName?: string): Promise<SkillManifest[]> {
+        const params = agentName ? `?agent=${encodeURIComponent(agentName)}` : '';
+        const response = await axios.get(`${API_BASE_URL}/skills${params}`);
+        return response.data;
+    },
+
+    /** Legacy method - deprecated but kept for compatibility */
     async getSkills(): Promise<{ native: any[], project: any[], prompt: any[] }> {
         const response = await axios.get(`${API_BASE_URL}/skills`);
+        // If the backend returns a flat array now, this might need mapping or just return empty structure
+        if (Array.isArray(response.data)) {
+            return {
+                native: response.data.filter(s => s.kind === 'native'),
+                project: response.data.filter(s => s.kind === 'mcp'),
+                prompt: response.data.filter(s => s.kind === 'prompt')
+            };
+        }
         return response.data;
     },
 
@@ -142,6 +175,21 @@ export const api = {
     async configureSkill(name: string, envVars: Record<string, string>): Promise<{ success: boolean, status: string }> {
         const response = await axios.post(`${API_BASE_URL}/skills/${name}/configure`, { envVars });
         return response.data;
+    },
+
+    /** Désactive manuellement un skill */
+    async disableSkill(name: string): Promise<void> {
+        await axios.post(`${API_BASE_URL}/skills/${encodeURIComponent(name)}/disable`);
+    },
+
+    /** Réactive un skill */
+    async enableSkill(name: string): Promise<void> {
+        await axios.post(`${API_BASE_URL}/skills/${encodeURIComponent(name)}/enable`);
+    },
+
+    /** Met à jour les skills d'un agent */
+    async updateAgentSkills(agentName: string, skills: string[]): Promise<void> {
+        await axios.patch(`${API_BASE_URL}/agents/${encodeURIComponent(agentName)}/skills`, { skills });
     },
 
     async getSessions(): Promise<any[]> {
