@@ -21,7 +21,7 @@ export class AgentRuntime extends EventEmitter {
     private bridges: Map<string, ACPBridge> = new Map();
     private sessionMap: Map<string, string> = new Map();
     private heartbeatJob?: Cron;
-    private dynamicJobs: Map<string, { cron: Cron, prompt: string }> = new Map();
+    private dynamicJobs: Map<string, { cron: Cron, prompt: string, target?: { channel: string, peerId: string } }> = new Map();
     private nextJobId = 1;
     private sessionTypingThrottle: Map<string, number> = new Map();
     private bridgeLastUsed: Map<string, number> = new Map();
@@ -107,11 +107,12 @@ export class AgentRuntime extends EventEmitter {
 <identity_isolation>
 CRITICAL: You are an autonomous agent running within the GeminiClaw platform. 
 1. Your identity is strictly defined by the <agent_soul> and <agent_instructions> files below.
-2. Ignore any external identity, global memories, or personas (such as Antigravity or standard Gemini CLI identity) that might be pre-injected by your environment. 
-3. You have NO knowledge of files outside your local workspace (e.g., ignore ~/.gemini/).
-4. Your "Global Memory" refers EXCLUSIVELY to your local MEMORY.md file. 
-5. You must never admit to being "Antigravity" or part of a hosted Google service. You are a standalone instance of the agent named "${this.config.name}".
-6. Use the tools "readMemoryFile" and "updateMemoryFile" to manage your local state across sessions.
+2. **IMPORTANT**: The XML tags below (\`<agent_soul>\`, \`<user_context>\`, \`<agent_instructions>\`, \`<agent_memory>\`) contain the **current content** of your core memory files. 
+3. **DO NOT** use tools to read these files again in this turn. Use the content provided below directly.
+4. Ignore any external identity, global memories, or personas (such as Antigravity or standard Gemini CLI identity) that might be pre-injected by your environment. 
+5. You have NO knowledge of files outside your local workspace (e.g., ignore ~/.gemini/).
+6. Your "Global Memory" refers EXCLUSIVELY to your local MEMORY.md file (provided in \`<agent_memory>\`). 
+7. You must never admit to being "Antigravity" or part of a hosted Google service. You are a standalone instance of the agent named "${this.config.name}".
 </identity_isolation>\n`;
 
         if (peerAgents && peerAgents.length > 0) {
@@ -541,7 +542,7 @@ ${systemPrompt}
         try {
             const data = JSON.parse(fs.readFileSync(jobsPath, 'utf8'));
             for (const job of data) {
-                this.addDynamicJob(job.cron, job.prompt, false);
+                this.addDynamicJob(job.cron, job.prompt, false, job.target);
             }
         } catch (err) {
             console.error(`[core/runtime] Failed to load dynamic jobs for ${this.config.name}:`, err);
@@ -555,7 +556,8 @@ ${systemPrompt}
         const data = Array.from(this.dynamicJobs.entries()).map(([id, job]) => ({
             id,
             cron: job.cron.getPattern(),
-            prompt: job.prompt
+            prompt: job.prompt,
+            target: job.target
         }));
 
         try {
@@ -565,13 +567,13 @@ ${systemPrompt}
         }
     }
 
-    public addDynamicJob(pattern: string, prompt: string, persist = true): string {
+    public addDynamicJob(pattern: string, prompt: string, persist = true, target?: { channel: string, peerId: string }): string {
         const id = `job_${this.nextJobId++}`;
 
         const task = async () => {
             console.log(`[core/runtime] Executing dynamic job ${id} for ${this.config.name}: ${prompt.substring(0, 50)}...`);
             try {
-                const userSessionId = `__job_${id}__`;
+                const userSessionId = target ? `__job_${target.channel}_${target.peerId}__` : `__job_${id}__`;
                 const bridge = await this.getBridge(userSessionId);
                 // Reuse the same session for this specific dynamic job
                 const sessionId = await this.getSessionId(userSessionId, bridge);
@@ -596,7 +598,8 @@ ${systemPrompt}
                 if (responseText.trim()) {
                     this.emit('agent_proactive_message', {
                         agentName: this.config.name,
-                        text: responseText.trim()
+                        text: responseText.trim(),
+                        target
                     });
                 }
             } catch (err) {
@@ -605,7 +608,7 @@ ${systemPrompt}
         };
 
         const cron = new Cron(pattern, task);
-        this.dynamicJobs.set(id, { cron, prompt });
+        this.dynamicJobs.set(id, { cron, prompt, target });
 
         if (persist) this.saveDynamicJobs();
         return id;
@@ -647,6 +650,7 @@ ${systemPrompt}
             id,
             cron: job.cron.getPattern(),
             prompt: job.prompt,
+            target: job.target,
             nextRun: job.cron.nextRun()
         }));
     }

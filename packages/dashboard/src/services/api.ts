@@ -137,6 +137,11 @@ export const api = {
         return response.data;
     },
 
+    async getJobs(): Promise<any[]> {
+        const response = await axios.get(`${API_BASE_URL}/jobs`);
+        return response.data;
+    },
+
     // ── Channels ──
     async getWhatsAppStatus(): Promise<any> {
         const response = await axios.get(`${API_BASE_URL}/channels/whatsapp/status`);

@@ -63,7 +63,8 @@
                 "run_shell_command",
                 "network"
             ],
-            "baseDir": "../../data/agents/main"
+            "baseDir": "../../data/agents/main",
+            "status": "Healthy"
         },
         {
             "name": "scipro",
@@ -86,7 +87,8 @@
                 "google_web_search",
                 "shell"
             ],
-            "baseDir": "../../data/agents/scipro"
+            "baseDir": "../../data/agents/scipro",
+            "status": "Healthy"
         },
         {
             "name": "viral-writer",
@@ -107,7 +109,8 @@
                 "google_web_search",
                 "shell"
             ],
-            "baseDir": "../../data/agents/viral-writer"
+            "baseDir": "../../data/agents/viral-writer",
+            "status": "Healthy"
         }
     ],
     "channels": {
@@ -125,5 +128,13 @@
                 "22898111917"
             ]
         }
-    }
+    },
+    "cron": [
+        {
+            "cron": "0 8 * * *",
+            "agentName": "main",
+            "delivery": "whatsapp -> 22898111917",
+            "prompt": "Fais moi un rapport complet sur l'état de mes finances et de mes projets en cours. Analyse mes derniers messages et résume les points importants avant que je ne commence ma journée."
+        }
+    ]
 }

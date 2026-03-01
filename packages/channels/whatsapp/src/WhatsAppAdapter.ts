@@ -30,7 +30,16 @@ export class WhatsAppAdapter {
     private qrStr: string | null = null;
     private processedMessages = new Set<string>();
     private peerToLastJid = new Map<string, string>();
+    /** Separate map for presence updates (typing indicators). 
+     *  In self-chat (@lid), we must use the LID for presence to work. */
+    private peerToPresenceJid = new Map<string, string>();
     private subscribedJids = new Set<string>();
+    /** 
+     * CRITICAL: Stores recently sent messages. 
+     * Baileys needs these to handle encryption retries (getMessage).
+     * Without this, self-chat and cross-device syncing show "Waiting for this message".
+     */
+    private messageStore = new Map<string, any>();
 
     constructor(private options: WhatsAppAdapterOptions = {}) {
         this.authDir = options.authDir ?? AUTH_DIR;
@@ -73,15 +82,28 @@ export class WhatsAppAdapter {
             async (peerId, text) => {
                 if (!this.sock) return;
                 try {
-                    // Always use the peerToLastJid map for the real send target.
-                    // For self-chat, this maps our canonical JID -> the LID JID that WhatsApp actually uses.
-                    // For normal chats, this maps the peer JID -> itself (or the last known JID).
-                    const realJid = this.peerToLastJid.get(peerId) || peerId;
+                    // Helper to convert phone numbers (e.g. +228...) to JIDs
+                    const formatJid = (id: string) => {
+                        if (id.includes('@')) return id; // Already a JID
+                        const clean = id.replace(/\+/g, '').trim();
+                        return `${clean}@s.whatsapp.net`;
+                    };
+
+                    const realJid = this.peerToLastJid.get(peerId) || formatJid(peerId);
 
                     console.log(`[whatsapp-debug] Sending message to ${realJid} (from peerId ${peerId}): ${text.slice(0, 50)}...`);
                     // Add a zero-width space to identify bot-generated messages
                     const botReplyText = text + '\u200B';
-                    await this.sock.sendMessage(realJid, { text: botReplyText });
+                    const sentMsg = await this.sock.sendMessage(realJid, { text: botReplyText });
+                    // Store the sent message for retry/decryption handling
+                    if (sentMsg?.key?.id && sentMsg?.message) {
+                        this.messageStore.set(sentMsg.key.id, sentMsg.message);
+                        // Limit store size
+                        if (this.messageStore.size > 500) {
+                            const firstKey = this.messageStore.keys().next().value;
+                            if (firstKey) this.messageStore.delete(firstKey);
+                        }
+                    }
                     console.log(`[whatsapp-debug] Message sent successful.`);
                 } catch (err) {
                     console.error('[whatsapp] Send failed:', err);
@@ -91,8 +113,8 @@ export class WhatsAppAdapter {
                 if (!this.sock) return;
                 try {
                     const myJid = this.sock?.user?.id ? this.sock.user.id.split('@')[0].split(':')[0] + '@s.whatsapp.net' : '';
-                    // For presence updates in self-chat, we must target the specific device LID, not the canonical self JID.
-                    const realJid = this.peerToLastJid.get(peerId) || peerId;
+                    // For presence updates, prefer the LID (device-specific) if available.
+                    const realJid = this.peerToPresenceJid.get(peerId) || this.peerToLastJid.get(peerId) || peerId;
 
                     console.log(`[whatsapp-debug] activityCallback: type=${type} peerId=${realJid} (mapped from ${peerId})`);
 
@@ -140,6 +162,18 @@ export class WhatsAppAdapter {
             browser: ['GeminiClaw', 'Chrome', '1.0.0'],
             markOnlineOnConnect: true,
             shouldIgnoreJid: () => false,
+            // getMessage is CRITICAL for message retry/decryption.
+            // When a client (especially self-phone) receives a message and can't decrypt it,
+            // it sends a "retry" request. Baileys then calls this function to get the 
+            // original message content to re-encrypt it with new session keys.
+            // Without this, the recipient sees "Waiting for this message".
+            getMessage: async (key: any) => {
+                const stored = this.messageStore.get(key.id);
+                if (stored) {
+                    return stored;
+                }
+                return undefined;
+            },
         });
 
         this.sock.ev.on('creds.update', saveCreds);
@@ -301,9 +335,22 @@ export class WhatsAppAdapter {
                 console.log(`[whatsapp] Ingesting message to gateway: ${text.trim()} (fromMe=${msg.key?.fromMe})`);
 
                 // For self-messages, we MUST use our own canonical JID as peerId 
-                // to ensure the reply goes to the "Note to self" chat thread.
+                // to ensure the gateway treats it as a single "Me" session.
                 const targetJid = msg.key?.fromMe ? myJid : jid;
-                this.peerToLastJid.set(targetJid, jid);
+
+                // ROUTING LOGIC (Anti-Regression):
+                // 1. For non-self messages, we map the peerId to the incoming JID.
+                // 2. For self-messages (Notes to self), we do NOT map to the LID for sending.
+                //    Sending to a LID from the bot account often fails to render on the phone.
+                //    Replies to self-chat must target the canonical @s.whatsapp.net JID.
+                // 3. However, typing indicators (presence) ONLY work if sent to the LID.
+                if (msg.key?.fromMe) {
+                    this.peerToPresenceJid.set(targetJid, jid);
+                    // Don't set peerToLastJid -> falls through to formatJid() -> @s.whatsapp.net
+                } else {
+                    this.peerToLastJid.set(targetJid, jid);
+                }
+
                 await gateway.ingest(CHANNEL, targetJid, text.trim(), undefined, { fromMe: !!msg.key?.fromMe });
 
 

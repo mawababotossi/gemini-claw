@@ -21,7 +21,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { resolve } from 'node:path';
 import { MessageQueue } from './MessageQueue.js';
-import type { GatewayConfig, ChannelConfig } from './types.js';
+import type { GatewayConfig, ChannelConfig, CronJob } from './types.js';
+
+const MIRROR_PEER_ID = 'dashboard_owner';
 
 /** Channel adapters register a send callback so the gateway can reply */
 export type SendCallback = (peerId: string, text: string, thought?: string) => Promise<void>;
@@ -86,21 +88,48 @@ export class Gateway implements IGateway {
 
         // Bind proactive heartbeat events
         for (const runtime of this.registry.getAll()) {
-            runtime.on('agent_proactive_message', async (data: { agentName: string, text: string }) => {
-                console.log(`[gateway] Proactive message from ${data.agentName}`);
+            runtime.on('agent_proactive_message', async (data: { agentName: string, text: string, target?: { channel: string, peerId: string } }) => {
+                console.log(`[gateway] Proactive message from ${data.agentName}${data.target ? ` for ${data.target.channel}/${data.target.peerId}` : ''}`);
 
-                const activeSessions = this.sessions.listAll().filter(s => s.agentName === data.agentName);
+                let text = data.text;
+                let target = data.target;
 
-                for (const session of activeSessions) {
-                    this.transcripts.append(session.id, {
+                // Handle Announce Protocol: "announce (channel -> peerId): message"
+                const announceMatch = text.match(/^announce\s*\(([^)]+)\s*->\s*([^)]+)\)\s*:\s*([\s\S]+)$/i);
+                if (announceMatch) {
+                    target = {
+                        channel: announceMatch[1].trim().toLowerCase(),
+                        peerId: announceMatch[2].trim()
+                    };
+                    text = announceMatch[3].trim();
+                    console.log(`[gateway] Announce protocol detected: routing to ${target.channel}/${target.peerId}`);
+                }
+
+                if (target) {
+                    // Targeted delivery
+                    this.transcripts.append(`${target.channel}_${target.peerId}_internal`, {
                         role: 'assistant',
-                        content: data.text,
+                        content: text,
                         timestamp: Date.now()
                     });
 
-                    await this.send(session.channel, session.peerId, data.text).catch(err => {
-                        console.error(`[gateway] Failed to send proactive message to ${session.channel}/${session.peerId}:`, err);
+                    await this.send(target.channel, target.peerId, text).catch(err => {
+                        console.error(`[gateway] Failed to send targeted proactive message to ${target!.channel}/${target!.peerId}:`, err);
                     });
+                } else {
+                    // Broadcast to active sessions
+                    const activeSessions = this.sessions.listAll().filter(s => s.agentName === data.agentName);
+                    for (const session of activeSessions) {
+                        this.transcripts.append(session.id, {
+                            role: 'assistant',
+                            content: text,
+                            timestamp: Date.now()
+                        });
+
+                        await this.send(session.channel, session.peerId, text).catch(err => {
+                            console.error(`[gateway] Failed to send proactive message to ${session.channel}/${session.peerId}:`, err);
+                        });
+                    }
                 }
             });
 
@@ -111,7 +140,57 @@ export class Gateway implements IGateway {
                     console.log(`[gateway-debug] Calling activityCallback for peer ${session.peerId}`);
                     await this.activityCallbacks.get(session.channel)!(session.peerId, 'typing');
                 }
+
+                // Mirroring: If typing for the owner on any channel, show it on WebChat too
+                if (session && this.isOwner(session.channel, session.peerId)) {
+                    // Mirror to WebChat
+                    if (session.channel !== 'webchat') {
+                        console.log(`[gateway-mirror] Agent typing on ${session.channel} -> Mirroring to WebChat`);
+                        const webchatHandler = this.activityCallbacks.get('webchat');
+                        if (webchatHandler) {
+                            await webchatHandler('__BROADCAST__', 'typing');
+                        }
+                    }
+                    // Mirror to WhatsApp
+                    else {
+                        const ownerJid = this.getOwnerJid();
+                        if (ownerJid) {
+                            console.log(`[gateway-mirror] Agent typing on WebChat -> Mirroring to WhatsApp (${ownerJid})`);
+                            const whatsappHandler = this.activityCallbacks.get('whatsapp');
+                            if (whatsappHandler) {
+                                await whatsappHandler(ownerJid, 'typing');
+                            }
+                        }
+                    }
+                }
             });
+        }
+
+        // Initialize global cron jobs
+        this.setupConfigCronJobs();
+    }
+
+    private setupConfigCronJobs() {
+        if (!this.config.cron || this.config.cron.length === 0) return;
+
+        console.log(`[gateway] Initializing ${this.config.cron.length} global cron jobs...`);
+        for (const job of (this.config.cron as CronJob[])) {
+            try {
+                const runtime = this.registry.get(job.agentName);
+                let target;
+                if (job.delivery) {
+                    const parts = job.delivery.split('->');
+                    if (parts.length === 2) {
+                        const channel = parts[0].trim().toLowerCase();
+                        const peerId = parts[1].trim();
+                        target = { channel, peerId };
+                    }
+                }
+                runtime.addDynamicJob(job.cron, job.prompt, false, target);
+                console.log(`[gateway] Scheduled global job: ${job.cron} (agent: ${job.agentName}${target ? `, target: ${target.channel}/${target.peerId}` : ''})`);
+            } catch (err: any) {
+                console.error(`[gateway] Failed to setup global cron job:`, err.message);
+            }
         }
     }
 
@@ -314,6 +393,14 @@ export class Gateway implements IGateway {
                     prompt: {
                         type: Type.STRING,
                         description: 'The prompt to execute at the scheduled time.'
+                    },
+                    channel: {
+                        type: Type.STRING,
+                        description: 'Optional channel to deliver the result to (e.g., "whatsapp").'
+                    },
+                    peerId: {
+                        type: Type.STRING,
+                        description: 'Optional peerId to deliver the result to (e.g., your phone number).'
                     }
                 },
                 required: ['agentName', 'cron', 'prompt']
@@ -322,9 +409,17 @@ export class Gateway implements IGateway {
                 const agentName = args.agentName as string;
                 const cron = args.cron as string;
                 const prompt = args.prompt as string;
+                const channel = args.channel as string;
+                const peerId = args.peerId as string;
                 const runtime = this.registry.get(agentName);
-                const id = runtime.addDynamicJob(cron, prompt);
-                return { success: true, jobId: id, message: `Task scheduled with pattern: ${cron}` };
+
+                let target;
+                if (channel && peerId) {
+                    target = { channel, peerId };
+                }
+
+                const id = runtime.addDynamicJob(cron, prompt, true, target);
+                return { success: true, jobId: id, message: `Task scheduled with pattern: ${cron}${target ? ` for ${channel}/${peerId}` : ''}` };
             }
         };
 
@@ -412,13 +507,18 @@ export class Gateway implements IGateway {
         }
 
         // Mirroring: If the owner speaks on one channel, show it on the other
-        if (this.isOwner(channel, peerId, metadata)) {
+        const isOwner = this.isOwner(channel, peerId, metadata);
+        console.log(`[gateway-mirror] Checking owner status: channel=${channel}, peerId=${peerId}, isOwner=${isOwner}`);
+
+        if (isOwner) {
             if (channel === 'webchat') {
                 // User spoke on WebChat -> Mirror to WhatsApp as a "Note to self"
                 const ownerJid = this.getOwnerJid();
                 if (ownerJid) {
                     console.log(`[gateway-mirror] WebChat activity -> Mirroring to WhatsApp (${ownerJid})`);
                     await this.send('whatsapp', ownerJid, text);
+                } else {
+                    console.log(`[gateway-mirror] Skipping WebChat -> WhatsApp mirror: No owner JID found`);
                 }
             } else if (channel === 'whatsapp') {
                 // User spoke on WhatsApp (Note to self) -> Mirror to all WebChat clients
@@ -734,9 +834,12 @@ export class Gateway implements IGateway {
     }
 
     private isOwner(channel: string, peerId: string, metadata?: Record<string, any>): boolean {
+        // If the channel adapter explicitly identifies the owner (e.g. via secret)
+        if (metadata?.isOwner === true) return true;
+
         if (channel === 'webchat') {
             const configuredOwnerId = this.config.ownerWebChatClientId;
-            return !!configuredOwnerId && peerId === configuredOwnerId;
+            return peerId === MIRROR_PEER_ID || (!!configuredOwnerId && peerId === configuredOwnerId);
         }
         if (channel === 'whatsapp') {
             const ownerJid = this.getOwnerJid();
@@ -749,8 +852,16 @@ export class Gateway implements IGateway {
     }
 
     private async broadcastToWebChat(msg: any): Promise<void> {
-        // Special peerId convention or just bypass the map if the adapter supports it
-        // For now, let's use a special peerId "__BROADCAST__"
+        // 1. Broadcast to all active WebSocket clients
         await this.send('webchat', '__BROADCAST__', JSON.stringify(msg));
+
+        // 2. Persist to mirroring transcript for later retrieval (even if WebChat was closed)
+        const session = this.sessions.getOrCreate('webchat', MIRROR_PEER_ID, 'main');
+        this.transcripts.append(session.id, {
+            role: msg.from === 'assistant' ? 'assistant' : 'user',
+            content: msg.text,
+            thought: msg.thought,
+            timestamp: Date.now()
+        });
     }
 }

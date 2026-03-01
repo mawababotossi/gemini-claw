@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Send, Bot, RefreshCw, User, Sparkles, Clock, MessageSquare, ChevronDown } from 'lucide-react';
+import { Send, RefreshCw, Sparkles, ChevronDown } from 'lucide-react';
 import { api } from '../services/api';
 import './WebChat.css';
 
@@ -23,6 +23,13 @@ export function WebChat() {
 
     // Initialize persistent client ID
     const clientId = useRef<string>((() => {
+        // If we are in the dashboard (environment secret exists), we use a fixed 'dashboard_owner' ID
+        // so that all WhatsApp activity is mirrored and persistent across browser sessions.
+        const DASHBOARD_SECRET = import.meta.env.VITE_DASHBOARD_SECRET || '';
+        if (DASHBOARD_SECRET) {
+            return 'dashboard_owner';
+        }
+
         let id = localStorage.getItem('gc_dashboard_client_id');
         if (!id) {
             id = 'db_' + Math.random().toString(36).substring(2, 10) + '_' + Date.now();
@@ -63,6 +70,8 @@ export function WebChat() {
                 const data = JSON.parse(event.data);
                 if (data.type === 'typing') {
                     setIsTyping(true);
+                } else if (data.type === 'paused') {
+                    setIsTyping(false);
                 } else if (data.type === 'message' && (data.from === 'assistant' || data.from === 'user')) {
                     setIsTyping(false);
                     setMessages(prev => [

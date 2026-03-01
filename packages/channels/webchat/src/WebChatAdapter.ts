@@ -29,30 +29,48 @@ export class WebChatAdapter {
 
     connect(gateway: IGateway): void {
         // Register our send function with the gateway
-        gateway.registerChannel(CHANNEL, async (peerId: string, text: string, thought?: string) => {
-            if (peerId === '__BROADCAST__') {
-                // Broadcast to all clients
-                let data: any;
-                try {
-                    data = JSON.parse(text);
-                } catch {
-                    data = { type: 'message', from: 'assistant', text, thought };
+        gateway.registerChannel(
+            CHANNEL,
+            async (peerId: string, text: string, thought?: string) => {
+                if (peerId === '__BROADCAST__') {
+                    // Broadcast to all clients
+                    let data: any;
+                    try {
+                        data = JSON.parse(text);
+                    } catch {
+                        data = { type: 'message', from: 'assistant', text, thought };
+                    }
+
+                    const payload = JSON.stringify(data);
+                    for (const ws of this.clients.values()) {
+                        if (ws.readyState === WebSocket.OPEN) {
+                            ws.send(payload);
+                        }
+                    }
+                    return;
                 }
 
-                const payload = JSON.stringify(data);
-                for (const ws of this.clients.values()) {
-                    if (ws.readyState === WebSocket.OPEN) {
+                const ws = this.clients.get(peerId);
+                if (ws?.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: 'message', from: 'assistant', text, thought }));
+                }
+            },
+            async (peerId: string, type: 'typing' | 'paused') => {
+                const payload = JSON.stringify({ type });
+                if (peerId === '__BROADCAST__') {
+                    for (const ws of this.clients.values()) {
+                        if (ws.readyState === WebSocket.OPEN) {
+                            ws.send(payload);
+                        }
+                    }
+                } else {
+                    const ws = this.clients.get(peerId);
+                    if (ws?.readyState === WebSocket.OPEN) {
                         ws.send(payload);
                     }
                 }
-                return;
             }
-
-            const ws = this.clients.get(peerId);
-            if (ws?.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ type: 'message', from: 'assistant', text, thought }));
-            }
-        });
+        );
 
         // HTTP server for health check and WebSocket upgrade
         const httpServer = createServer((req, res) => {
@@ -68,6 +86,7 @@ export class WebChatAdapter {
         this.wss = new WebSocketServer({ server: httpServer });
 
         this.wss.on('connection', (ws) => {
+            console.log(`[webchat] New WebSocket connection established`);
             let clientId: string | null = null;
 
             ws.on('message', async (raw) => {
@@ -80,19 +99,25 @@ export class WebChatAdapter {
 
                 if (!parsed.clientId) return;
 
-                // Register client on first message
-                if (!clientId) {
+                // Always update/register client mapping
+                if (clientId !== parsed.clientId) {
                     clientId = parsed.clientId;
                     this.clients.set(clientId, ws);
+                    console.log(`[webchat] Client registered: ${clientId}`);
+                }
+
+                if (parsed.type === 'ping') {
                     ws.send(JSON.stringify({ type: 'connected', clientId }));
+                    return;
                 }
 
                 if (parsed.type === 'message' && parsed.text?.trim()) {
                     // Acknowledge receipt immediately
                     ws.send(JSON.stringify({ type: 'typing' }));
                     // Let the gateway handle it
+                    const secret = process.env['DASHBOARD_SECRET'] || process.env['VITE_DASHBOARD_SECRET'];
                     const metadata = {
-                        isOwner: !!parsed.secret && parsed.secret === process.env['DASHBOARD_SECRET']
+                        isOwner: !!parsed.secret && !!secret && parsed.secret === secret
                     };
                     await gateway.ingest(CHANNEL, clientId, parsed.text.trim(), undefined, metadata);
                 }

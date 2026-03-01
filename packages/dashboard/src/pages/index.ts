@@ -7,3 +7,4 @@ export { Logs } from './Logs';
 export { Channels } from './Channels';
 export { Settings } from './Settings';
 export { ComingSoon } from './ComingSoon';
+export { CronJobs } from './CronJobs';

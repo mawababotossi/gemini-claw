@@ -15,11 +15,10 @@ export interface ChannelConfig {
 }
 
 export interface CronJob {
-    schedule: string;  // cron expression, e.g. "0 8 * * *"
-    agent: string;
-    channel: string;
-    peerId: string;    // recipient to send to
+    cron: string;      // cron expression, e.g. "0 8 * * *"
+    agentName: string;
     prompt: string;
+    delivery?: string; // e.g. "whatsapp -> +22891911307"
 }
 
 export interface GatewayConfig {

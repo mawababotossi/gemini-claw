@@ -126,6 +126,7 @@ async function main(): Promise<void> {
     app.use('/api/transcripts', requireApiToken);
     app.use('/api/sessions', requireApiToken);
     app.use('/api/logs', requireApiToken);
+    app.use('/api/jobs', requireApiToken);
 
     // Enable MCP SSE transport
 
@@ -327,6 +328,23 @@ async function main(): Promise<void> {
             res.json({ success });
         } catch (err: any) {
             res.status(400).json({ error: err.message });
+        }
+    });
+
+    // API: List all dynamic jobs across agents
+    app.get('/api/jobs', (req, res) => {
+        try {
+            const allJobs: any[] = [];
+            for (const runtime of gateway.registry.getAll()) {
+                const jobs = runtime.listDynamicJobs().map(j => ({
+                    ...j,
+                    agentName: runtime.getConfig().name
+                }));
+                allJobs.push(...jobs);
+            }
+            res.json(allJobs);
+        } catch (err: any) {
+            res.status(500).json({ error: err.message });
         }
     });
 

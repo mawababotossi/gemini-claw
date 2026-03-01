@@ -150,9 +150,10 @@ export function Channels() {
                                 <button className="btn btn-outline btn-sm" onClick={() => setShowConfig(!showConfig)}>
                                     <Settings size={14} className="mr-2" /> Configure
                                 </button>
-                                {waStatus?.status === 'connected' && (
+                                {/* Disconnect/Reset button - always show if channel is enabled (even if pairing) */}
+                                {waStatus?.status !== 'disabled' && (
                                     <button className="btn btn-outline btn-sm text-danger" onClick={handleLogout}>
-                                        <LogOut size={14} className="mr-2" /> Disconnect
+                                        <LogOut size={14} className="mr-2" /> {waStatus?.status === 'connected' ? 'Disconnect' : 'Reset Session'}
                                     </button>
                                 )}
                             </div>
@@ -224,12 +225,23 @@ export function Channels() {
                                     <button className="btn btn-outline" onClick={() => setShowConfig(false)}>
                                         <X size={16} className="mr-2" /> Cancel
                                     </button>
+                                    {waStatus?.status !== 'disabled' && (
+                                        <button className="btn btn-outline text-danger" onClick={handleLogout}>
+                                            <LogOut size={16} className="mr-2" /> {waStatus?.status === 'connected' ? 'Disconnect' : 'Reset Session'}
+                                        </button>
+                                    )}
                                     {saveStatus && (
                                         <div className={`p-2 px-4 rounded-md text-xs font-bold ${saveStatus.includes('Error') ? 'bg-danger/10 text-danger border border-danger/30' : 'bg-success/10 text-success border border-success/30'}`}>
                                             {saveStatus}
                                         </div>
                                     )}
                                 </div>
+                                {waStatus?.status === 'qr' && (
+                                    <div className="mt-4 p-3 rounded-md bg-warning/10 border border-warning/30 text-warning text-xs flex items-center gap-2">
+                                        <AlertTriangle size={14} />
+                                        <span>Close this configuration panel to view the QR code below.</span>
+                                    </div>
+                                )}
                             </div>
                         )}
 
