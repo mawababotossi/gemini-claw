@@ -30,6 +30,8 @@ export class AgentRuntime extends EventEmitter {
     private readonly TYPING_THROTTLE_MS = 3000; // Reduced to 3s for WhatsApp/WebChat visibility
     private gcInterval?: any;
     private _status: NonNullable<AgentConfig['status']> = 'Healthy';
+    private journalQueue: string[] = [];
+    private journalFlushing = false;
 
     constructor(
         config: AgentConfig,
@@ -187,8 +189,10 @@ CRITICAL: You are an autonomous agent running within the GeminiClaw platform.
             promptText = `<user_input>\n${promptText}\n</user_input>`;
         }
 
-        let responseText = '';
-        let thoughtChunks = '';
+        const responseParts: string[] = [];
+        const thoughtParts: string[] = [];
+        let thoughtLen = 0;
+        const THOUGHT_MAX = 30000;
 
         // OpenClaw-inspired robust typing: refresh indicator every 3s to prevent timeout
         const typingInterval = setInterval(() => {
@@ -207,12 +211,13 @@ CRITICAL: You are an autonomous agent running within the GeminiClaw platform.
             await bridge.prompt(acpSessionId, promptText, async (update) => {
                 if (update.sessionUpdate === 'agent_message_chunk') {
                     this.emitTyping(msg.sessionId);
-                    responseText += update.content.text;
+                    responseParts.push(update.content.text);
                     streamingBuffer?.append(update.content.text);
                 } else if (update.sessionUpdate === 'agent_thought_chunk') {
                     this.emitTyping(msg.sessionId);
-                    if (thoughtChunks.length < 30000) {
-                        thoughtChunks += update.content.text;
+                    if (thoughtLen < THOUGHT_MAX) {
+                        thoughtParts.push(update.content.text);
+                        thoughtLen += update.content.text.length;
                     }
                 }
             });
@@ -233,6 +238,9 @@ CRITICAL: You are an autonomous agent running within the GeminiClaw platform.
             content: msg.text,
             timestamp: msg.timestamp,
         });
+
+        const responseText = responseParts.join('');
+        const thoughtChunks = thoughtParts.join('');
 
         const { cleanText: cleanedResponse, thought: finalThought } = this.separateThoughtFromResponse(
             responseText,
@@ -270,16 +278,35 @@ CRITICAL: You are an autonomous agent running within the GeminiClaw platform.
     private logToJournal(userText: string, assistantText: string) {
         if (!this.config.baseDir) return;
 
-        const dateStr = new Date().toISOString().split('T')[0];
-        const journalPath = path.join(this.config.baseDir, 'memory', `${dateStr}.md`);
-
         const timestamp = new Date().toLocaleTimeString();
         const entry = `\n--- [${timestamp}] ---\n**User**: ${userText}\n**Assistant**: ${assistantText}\n`;
+        this.journalQueue.push(entry);
+        this.flushJournal();
+    }
+
+    private async flushJournal() {
+        if (this.journalFlushing || this.journalQueue.length === 0) return;
+        this.journalFlushing = true;
 
         try {
-            fs.appendFileSync(journalPath, entry, 'utf8');
+            const entries = this.journalQueue.splice(0);
+            const dateStr = new Date().toISOString().split('T')[0];
+            const journalPath = path.join(this.config.baseDir!, 'memory', `${dateStr}.md`);
+
+            // Ensure memory directory exists
+            const memDir = path.dirname(journalPath);
+            if (!fs.existsSync(memDir)) {
+                fs.mkdirSync(memDir, { recursive: true });
+            }
+
+            await fs.promises.appendFile(journalPath, entries.join(''), 'utf8');
         } catch (err) {
-            console.error(`[core/runtime] Failed to log to journal:`, err);
+            console.error('[core/runtime] Journal flush error:', err);
+        } finally {
+            this.journalFlushing = false;
+            if (this.journalQueue.length > 0) {
+                this.flushJournal();
+            }
         }
     }
 
@@ -829,6 +856,7 @@ ${systemPrompt}
                         this.bridges.delete(sessionId);
                         this.sessionMap.delete(sessionId);
                         this.bridgeLastUsed.delete(sessionId);
+                        this.sessionTypingThrottle.delete(sessionId);
                     }
                 }
             }

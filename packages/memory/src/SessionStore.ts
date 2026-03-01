@@ -16,6 +16,7 @@ const DEFAULT_DATA: DbSchema = { sessions: [] };
 
 export class SessionStore {
     private db: ReturnType<typeof JSONFileSyncPreset<DbSchema>>;
+    private writeTimer?: NodeJS.Timeout;
 
     constructor(dataDir: string) {
         if (!existsSync(dataDir)) {
@@ -25,9 +26,16 @@ export class SessionStore {
         this.db = JSONFileSyncPreset<DbSchema>(dbPath, DEFAULT_DATA);
     }
 
+    private scheduleWrite() {
+        if (this.writeTimer) return;
+        this.writeTimer = setTimeout(() => {
+            this.db.write();
+            this.writeTimer = undefined;
+        }, 1000); // Batch writes every 1 second
+    }
+
     /** Get or create a session for (channel, peerId) */
     getOrCreate(channel: string, peerId: string, agentName: string): Session {
-        this.db.read();
         const existing = this.db.data.sessions.find(
             (s: Session) => s.channel === channel && s.peerId === peerId,
         );
@@ -37,43 +45,47 @@ export class SessionStore {
         const now = Date.now();
         const session: Session = { id, channel, peerId, agentName, createdAt: now, updatedAt: now };
         this.db.data.sessions.push(session);
-        this.db.write();
+        this.scheduleWrite();
         return session;
     }
 
     get(sessionId: string): Session | undefined {
-        this.db.read();
         return this.db.data.sessions.find((s: Session) => s.id === sessionId);
     }
 
     findByChannelAndPeer(channel: string, peerId: string): Session | undefined {
-        this.db.read();
         return this.db.data.sessions.find(
             (s: Session) => s.channel === channel && s.peerId === peerId,
         );
     }
 
     listAll(): Session[] {
-        this.db.read();
         return [...this.db.data.sessions].sort(
             (a: Session, b: Session) => b.updatedAt - a.updatedAt,
         );
     }
 
     touch(sessionId: string): void {
-        this.db.read();
         const s = this.db.data.sessions.find((s: Session) => s.id === sessionId);
-        if (s) { s.updatedAt = Date.now(); this.db.write(); }
+        if (s) {
+            s.updatedAt = Date.now();
+            this.scheduleWrite();
+        }
     }
 
     delete(sessionId: string): void {
-        this.db.read();
         this.db.data.sessions = this.db.data.sessions.filter(
             (s: Session) => s.id !== sessionId,
         );
-        this.db.write();
+        this.scheduleWrite();
     }
 
-    // Compatibility stub (no-op for lowdb)
-    close(): void { }
+    /** Force write and clear timer */
+    close(): void {
+        if (this.writeTimer) {
+            clearTimeout(this.writeTimer);
+            this.db.write();
+            this.writeTimer = undefined;
+        }
+    }
 }

@@ -48,9 +48,8 @@ export class Gateway implements IGateway {
         this.sessions = new SessionStore(config.dataDir);
         this.transcripts = new TranscriptStore(config.dataDir);
 
-        const openClawSkillsPath = '/home/tym/.nvm/versions/node/v22.14.0/lib/node_modules/openclaw/skills';
         const localSkillsPath = path.join(config.dataDir, 'skills');
-        this.skillRegistry = new SkillRegistry([openClawSkillsPath, localSkillsPath]);
+        this.skillRegistry = new SkillRegistry([localSkillsPath]);
 
         this.mcpServer = new SkillMcpServer(this.skillRegistry);
 

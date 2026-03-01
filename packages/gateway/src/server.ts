@@ -14,8 +14,9 @@ import { requireApiToken } from './middleware/apiAuth.js';
 
 // --- Log Interception ---
 const logClients = new Set<Response>();
-const logBuffer: string[] = [];
-const MAX_BUFFER = 50;
+interface LogEntry { timestamp: string; level: string; text: string; }
+const logBuffer: LogEntry[] = [];
+const MAX_BUFFER = 200;
 
 const originalConsole = {
     log: console.log,
@@ -27,18 +28,24 @@ const originalConsole = {
 };
 
 function broadcastLog(level: string, ...args: any[]) {
-    const timestamp = new Date().toISOString();
-    // Use util.format-like simple formatting, or just basic string joining
-    const text = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+    const entry: LogEntry = {
+        timestamp: new Date().toISOString(),
+        level,
+        text: args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ')
+    };
 
     originalConsole[level as keyof typeof originalConsole](...args);
 
-    const msg = JSON.stringify({ timestamp, level, text });
-    logBuffer.push(msg);
+    logBuffer.push(entry);
     if (logBuffer.length > MAX_BUFFER) logBuffer.shift();
 
-    for (const client of logClients) {
-        client.write(`data: ${msg}\n\n`);
+    if (logClients.size > 0) {
+        const msg = `data: ${JSON.stringify(entry)}\n\n`;
+        setImmediate(() => {
+            for (const client of logClients) {
+                client.write(msg);
+            }
+        });
     }
 }
 
@@ -65,7 +72,7 @@ async function main(): Promise<void> {
     // WebChat (always loaded — used as default dev channel)
     if (config.channels['webchat']?.enabled !== false) {
         const { WebChatAdapter } = await import('@geminiclaw/channel-webchat');
-        const wcConfig = config.channels['webchat'] ?? {};
+        const wcConfig = (config.channels['webchat'] ?? {}) as any;
         const wc = new WebChatAdapter(wcConfig.port ?? 3001);
         wc.connect(gateway as any);
         console.log(`[geminiclaw] WebChat ready on port ${wcConfig.port ?? 3001}`);
@@ -463,8 +470,8 @@ async function main(): Promise<void> {
         res.setHeader('Connection', 'keep-alive');
 
         // Send history
-        for (const msg of logBuffer) {
-            res.write(`data: ${msg}\n\n`);
+        for (const entry of logBuffer) {
+            res.write(`data: ${JSON.stringify(entry)}\n\n`);
         }
 
         logClients.add(res);
