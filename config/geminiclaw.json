@@ -61,10 +61,18 @@
                 "read_file",
                 "write_file",
                 "run_shell_command",
-                "network"
+                "network",
+                "read_skill",
+                "run_code"
             ],
             "baseDir": "../../data/agents/main",
-            "status": "Healthy"
+            "status": "Healthy",
+            "skills": [
+                "nano-pdf",
+                "skill-creator",
+                "weather",
+                "markdown-to-pdf"
+            ]
         },
         {
             "name": "scipro",

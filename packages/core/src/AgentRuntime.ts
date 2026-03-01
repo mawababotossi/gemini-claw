@@ -13,6 +13,7 @@ import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
 import { Cron } from 'croner';
+import { StreamingBuffer } from './StreamingBuffer.js';
 
 export class AgentRuntime extends EventEmitter {
     private config: AgentConfig;
@@ -142,10 +143,10 @@ CRITICAL: You are an autonomous agent running within the GeminiClaw platform.
 
         // Inject prompt-driven skills from registry
         if (this.skillRegistry) {
-            // Add prompt-driven skills from SkillRegistry
-            const promptBlock = this.skillRegistry.getPromptBlock(this.config.skills);
-            if (promptBlock) {
-                p += promptBlock;
+            // Skill prompt block (OpenClaw style)
+            const skillsBlock = this.skillRegistry.getPromptBlock(this.config.skills);
+            if (skillsBlock) {
+                p += skillsBlock;
             }
         }
 
@@ -155,7 +156,11 @@ CRITICAL: You are an autonomous agent running within the GeminiClaw platform.
     /**
      * Process an inbound message through the Gemini CLI via ACP.
      */
-    async processMessage(msg: InboundMessage, peerAgents?: { name: string; model: string }[]): Promise<AgentResponse> {
+    async processMessage(
+        msg: InboundMessage,
+        peerAgents?: { name: string; model: string }[],
+        options?: { onChunk?: (text: string) => Promise<void> }
+    ): Promise<AgentResponse> {
         await this.checkHealth(msg.sessionId);
         const bridge = await this.getBridge(msg.sessionId);
 
@@ -183,20 +188,31 @@ CRITICAL: You are an autonomous agent running within the GeminiClaw platform.
             this.emitTyping(msg.sessionId);
         }, this.TYPING_THROTTLE_MS);
 
+        // Buffer pour le streaming
+        const streamingBuffer = options?.onChunk
+            ? new StreamingBuffer(options.onChunk, 300)
+            : null;
+
         try {
             // Emit typing right away
             this.emitTyping(msg.sessionId);
 
-            await bridge.prompt(acpSessionId, promptText, (update) => {
+            await bridge.prompt(acpSessionId, promptText, async (update) => {
                 if (update.sessionUpdate === 'agent_message_chunk') {
                     this.emitTyping(msg.sessionId);
                     responseText += update.content.text;
+                    streamingBuffer?.append(update.content.text);
                 } else if (update.sessionUpdate === 'agent_thought_chunk') {
                     this.emitTyping(msg.sessionId);
-                    thoughtChunks += update.content.text;
+                    if (thoughtChunks.length < 30000) {
+                        thoughtChunks += update.content.text;
+                    }
                 }
             });
+
+            await streamingBuffer?.flushNow();
         } catch (err: any) {
+            streamingBuffer?.destroy();
             console.error('[core/runtime] ACP Prompt error:', err);
             return await this.tryFallbacks(msg, err);
         } finally {
@@ -233,7 +249,8 @@ CRITICAL: You are an autonomous agent running within the GeminiClaw platform.
         return {
             text: cleanedResponse,
             sessionId: msg.sessionId,
-            thought: finalThought || undefined
+            thought: finalThought || undefined,
+            streamed: streamingBuffer !== null
         };
     }
 

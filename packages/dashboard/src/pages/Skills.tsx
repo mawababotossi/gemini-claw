@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '../services/api';
-import { RefreshCw, Wrench, Puzzle, Shield, Terminal, Download, CheckCircle2, AlertCircle } from 'lucide-react';
+import { RefreshCw, Wrench, Puzzle, Shield, Terminal, Download, CheckCircle2, AlertCircle, Settings, X, Save } from 'lucide-react';
 import './Skills.css';
 
 export function Skills() {
@@ -8,6 +8,11 @@ export function Skills() {
     const [isLoading, setIsLoading] = useState(true);
     const [isInstalling, setIsInstalling] = useState<string | null>(null);
     const [installResult, setInstallResult] = useState<{ name: string, success: boolean, output: string } | null>(null);
+
+    // Config Modal State
+    const [configSkill, setConfigSkill] = useState<any | null>(null);
+    const [envVars, setEnvVars] = useState<Record<string, string>>({});
+    const [isConfiguring, setIsConfiguring] = useState(false);
 
     const fetchSkills = async () => {
         try {
@@ -34,6 +39,29 @@ export function Skills() {
             setInstallResult({ name, success: false, output: err.message });
         } finally {
             setIsInstalling(null);
+        }
+    };
+
+    const handleOpenConfig = (skill: any) => {
+        const initialEnv: Record<string, string> = {};
+        skill.requiredEnv.forEach((env: any) => {
+            initialEnv[env.key] = '';
+        });
+        setEnvVars(initialEnv);
+        setConfigSkill(skill);
+    };
+
+    const handleSaveConfig = async () => {
+        if (!configSkill) return;
+        try {
+            setIsConfiguring(true);
+            await api.configureSkill(configSkill.name, envVars);
+            setConfigSkill(null);
+            await fetchSkills();
+        } catch (err) {
+            console.error('Failed to configure skill', err);
+        } finally {
+            setIsConfiguring(false);
         }
     };
 
@@ -118,7 +146,7 @@ export function Skills() {
 
                         <div className="skills-grid grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             {skills.prompt.map(skill => (
-                                <div key={skill.name} className={`skill-card glass-card p-4 ${skill.status === 'disabled' ? 'opacity-70' : ''}`}>
+                                <div key={skill.name} className={`skill-card glass-card p-4 ${skill.status !== 'enabled' ? 'opacity-70' : ''}`}>
                                     <div className="flex items-start gap-4">
                                         <div className="skill-icon-flat shrink-0 w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center text-lg">
                                             {skill.icon || '🦞'}
@@ -130,10 +158,21 @@ export function Skills() {
                                                     {skill.status === 'enabled' ? (
                                                         <CheckCircle2 size={12} className="text-success" />
                                                     ) : (
-                                                        <AlertCircle size={12} className="text-warning" />
+                                                        <AlertCircle size={12} className={skill.status === 'needs-config' ? "text-warning" : "text-error"} />
                                                     )}
                                                 </h3>
-                                                {skill.status === 'disabled' && skill.install && (
+
+                                                {skill.status === 'needs-config' && (
+                                                    <button
+                                                        className="btn btn-xs btn-outline btn-warning gap-1"
+                                                        onClick={() => handleOpenConfig(skill)}
+                                                    >
+                                                        <Settings size={10} />
+                                                        Configure
+                                                    </button>
+                                                )}
+
+                                                {skill.status === 'needs-install' && (
                                                     <button
                                                         className="btn btn-xs btn-primary gap-1"
                                                         onClick={() => handleInstall(skill.name)}
@@ -145,8 +184,8 @@ export function Skills() {
                                                 )}
                                             </div>
                                             <p className="text-xs text-muted leading-relaxed mb-2">{skill.description}</p>
-                                            {skill.status === 'disabled' && (
-                                                <div className="text-[10px] bg-red-500/10 text-red-400 p-1 rounded border border-red-500/20 italic">
+                                            {skill.status !== 'enabled' && (
+                                                <div className={`text-[10px] p-1 rounded border italic ${skill.status === 'needs-config' ? 'bg-warning/10 text-warning border-warning/20' : 'bg-red-500/10 text-red-400 border-red-500/20'}`}>
                                                     {skill.reason}
                                                 </div>
                                             )}
@@ -194,6 +233,60 @@ export function Skills() {
                                     <p className="text-sm italic">No custom project skills currently active.</p>
                                 </div>
                             )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Config Modal */}
+            {configSkill && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                    <div className="glass-card w-full max-w-md flex flex-col overflow-hidden shadow-2xl animate-in zoom-in duration-200">
+                        <div className="p-4 border-b border-white/10 flex justify-between items-center bg-white/5">
+                            <h3 className="font-bold flex items-center gap-2">
+                                <Settings size={18} className="text-warning" />
+                                Configure {configSkill.name}
+                            </h3>
+                            <button className="btn btn-ghost btn-sm p-1" onClick={() => setConfigSkill(null)}>
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        <div className="p-6 flex flex-col gap-4">
+                            <p className="text-xs text-muted mb-2">
+                                Enter the required environment variables for this skill. These will be saved to your <code>.env</code> file.
+                            </p>
+
+                            {configSkill.requiredEnv.map((env: any) => (
+                                <div key={env.key} className="flex flex-col gap-1.5">
+                                    <label className="text-xs font-bold text-muted flex justify-between">
+                                        {env.key}
+                                        {env.url && (
+                                            <a href={env.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-normal">Get Key</a>
+                                        )}
+                                    </label>
+                                    <input
+                                        type={env.secret ? "password" : "text"}
+                                        className="input input-sm bg-white/5 border-white/10 focus:border-primary/50 text-sm"
+                                        placeholder={env.description || `Value for ${env.key}`}
+                                        value={envVars[env.key] || ''}
+                                        onChange={(e) => setEnvVars({ ...envVars, [env.key]: e.target.value })}
+                                    />
+                                    {env.description && <span className="text-[10px] text-muted/60">{env.description}</span>}
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="p-4 border-t border-white/10 flex justify-end gap-2 bg-white/5">
+                            <button className="btn btn-ghost btn-sm" onClick={() => setConfigSkill(null)}>Cancel</button>
+                            <button
+                                className="btn btn-primary btn-sm gap-2"
+                                onClick={handleSaveConfig}
+                                disabled={isConfiguring}
+                            >
+                                {isConfiguring ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
+                                Save Configuration
+                            </button>
                         </div>
                     </div>
                 </div>

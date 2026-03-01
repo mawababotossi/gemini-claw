@@ -6,3 +6,4 @@ export * from './types.js';
 export { AgentRuntime } from './AgentRuntime.js';
 export { AgentRegistry } from './AgentRegistry.js';
 export { ACPBridge, ACPMessageChunk, ACPSessionUpdate } from './ACPBridge.js';
+export { overwriteEnvVariables } from './utils/env.js';

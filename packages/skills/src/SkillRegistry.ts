@@ -10,31 +10,57 @@ import { SkillMdLoader, SkillMd } from './SkillMdLoader.js';
 export class SkillRegistry {
     private skills: Map<string, Skill> = new Map();
     private skillMdLoader?: SkillMdLoader;
-    private promptSkills: SkillMd[] = [];
+    private _allSkillsCache: SkillMd[] = [];
+    private _activeSkillsCache: SkillMd[] = [];
+    private _cacheTimestamp = 0;
+    private readonly CACHE_TTL_MS = 10_000; // 10 seconds
 
     constructor(skillDirs?: string[]) {
         if (skillDirs && skillDirs.length > 0) {
             this.skillMdLoader = new SkillMdLoader(skillDirs);
-            this.refreshPromptSkills();
+            try {
+                this._rebuildCache();
+            } catch (err) {
+                console.error('[skills] Initial skill load failed:', err);
+            }
         }
     }
 
-    /** Refresh prompt-driven skills from disk */
+    public getSkillMdLoader(): SkillMdLoader | undefined {
+        return this.skillMdLoader;
+    }
+
+    /** Refresh prompt-driven skills from disk (force cache invalidation) */
     public refreshPromptSkills(): void {
-        if (this.skillMdLoader) {
-            const all = this.skillMdLoader.loadAll();
-            this.promptSkills = this.skillMdLoader.filter(all);
-            console.log(`[skills] Loaded ${this.promptSkills.length} prompt-driven skills.`);
+        this._cacheTimestamp = 0; // Force rebuild
+        this._rebuildCache();
+        console.log(`[skills] ${this._activeSkillsCache.length}/${this._allSkillsCache.length} prompt skills refreshed.`);
+    }
+
+    private _maybeRebuildCache(): void {
+        if (Date.now() - this._cacheTimestamp > this.CACHE_TTL_MS) {
+            this._rebuildCache();
         }
+    }
+
+    private _rebuildCache(): void {
+        if (!this.skillMdLoader) return;
+        const all = this.skillMdLoader.loadAll();
+        // filter() updates statuses in-place and returns only the enabled ones
+        const active = this.skillMdLoader.filter(all);
+        this._allSkillsCache = all;
+        this._activeSkillsCache = active;
+        this._cacheTimestamp = Date.now();
     }
 
     /** Get the prompt block for all active prompt-driven skills, or a specific subset */
     public getPromptBlock(whitelist?: string[]): string {
         if (!this.skillMdLoader) return '';
 
-        let targetSkills = this.promptSkills;
+        this._maybeRebuildCache();
+        let targetSkills = this._activeSkillsCache;
         if (whitelist && whitelist.length > 0) {
-            targetSkills = this.promptSkills.filter(s => whitelist.includes(s.name));
+            targetSkills = this._activeSkillsCache.filter(s => whitelist.includes(s.name));
         }
 
         return this.skillMdLoader.formatForPrompt(targetSkills);
@@ -42,15 +68,14 @@ export class SkillRegistry {
 
     /** Get all prompt-driven skills (including disabled ones) */
     public getAllPromptSkills(): SkillMd[] {
-        if (!this.skillMdLoader) return [];
-        const all = this.skillMdLoader.loadAll();
-        this.skillMdLoader.filter(all); // Filters and updates status/reason in-place
-        return all;
+        this._maybeRebuildCache();
+        return this._allSkillsCache;
     }
 
     /** Get filtered prompt-driven skills */
     public getActivePromptSkills(): SkillMd[] {
-        return this.promptSkills;
+        this._maybeRebuildCache();
+        return this._activeSkillsCache;
     }
 
     /** Register a local skill */

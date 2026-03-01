@@ -20,6 +20,8 @@ import { Type } from '@google/genai';
 import fs from 'node:fs';
 import path from 'node:path';
 import { resolve } from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { MessageQueue } from './MessageQueue.js';
 import type { GatewayConfig, ChannelConfig, CronJob } from './types.js';
 
@@ -488,20 +490,44 @@ export class Gateway implements IGateway {
             parameters: {
                 type: Type.OBJECT,
                 properties: {
-                    location: {
+                    name: {
                         type: Type.STRING,
-                        description: 'The absolute path to the SKILL.md file (provided in <available_skills>).'
+                        description: 'The name of the skill to read (e.g. "github", "food-order").'
                     }
                 },
-                required: ['location']
+                required: ['name']
             },
             execute: async (args) => {
-                const location = args.location as string;
+                const name = args.name as string;
                 try {
-                    if (!fs.existsSync(location)) {
-                        throw new Error(`Skill file not found at: ${location}`);
+                    const skill = this.skillRegistry.getAllPromptSkills().find(s => s.name === name);
+                    if (!skill) {
+                        throw new Error(`Skill not found: ${name}`);
                     }
-                    const content = fs.readFileSync(location, 'utf8');
+
+                    const location = skill.path;
+                    const resolvedPath = path.resolve(location);
+
+                    // Security check: must be within one of the authorized skill directories
+                    const skillLoader = this.skillRegistry.getSkillMdLoader();
+                    const skillDirs = skillLoader?.getSkillDirs() || [];
+                    const isAllowed = skillDirs.some(dir => resolvedPath.startsWith(path.resolve(dir) + path.sep));
+
+                    if (!isAllowed) {
+                        console.warn(`[gateway/security] read_skill: Unauthorized access attempt to "${resolvedPath}"`);
+                        throw new Error(`Access denied: path is outside of authorized skill directories.`);
+                    }
+
+                    // Security check: must be a SKILL.md file
+                    if (path.basename(resolvedPath) !== 'SKILL.md') {
+                        throw new Error(`Only SKILL.md files can be read via read_skill.`);
+                    }
+
+                    if (!fs.existsSync(resolvedPath)) {
+                        throw new Error(`Skill file not found at: ${resolvedPath}`);
+                    }
+
+                    const content = fs.readFileSync(resolvedPath, 'utf8');
                     return { content };
                 } catch (err: any) {
                     throw new Error(`Failed to read skill: ${err.message}`);
@@ -590,18 +616,43 @@ export class Gateway implements IGateway {
         // Dispatch through per-session queue (FIFO)
         let response: AgentResponse;
         try {
-            response = await this.queue.enqueue(msg, runtime, peerAgents);
+            const sendFn = async (text: string) => {
+                await this.send(channel, peerId, text);
+
+                // Mirroring if owner
+                if (this.isOwner(channel, peerId, metadata)) {
+                    if (channel === 'whatsapp') {
+                        await this.broadcastToWebChat({ type: 'message', from: 'assistant', text });
+                    } else if (channel === 'webchat') {
+                        const ownerJid = this.getOwnerJid();
+                        if (ownerJid) await this.send('whatsapp', ownerJid, text);
+                    }
+                }
+            };
+
+            response = await this.queue.enqueue(msg, runtime, peerAgents, { onChunk: sendFn });
         } catch (err) {
             console.error(`[gateway] Runtime error for session ${session.id}:`, err);
             await this.send(channel, peerId, '⚠️ An error occurred. Please try again.');
             return;
         }
 
-        // Send the response back via the channel adapter
-        await this.send(channel, peerId, response.text, response.thought);
+        // Send the response back via the channel adapter (only if not streamed)
+        if (!response.streamed) {
+            await this.send(channel, peerId, response.text, response.thought);
+        } else if (response.thought) {
+            // If streamed, we might still want to send the thought to the dashboard/mirror
+            if (this.isOwner(channel, peerId, metadata)) {
+                if (channel === 'whatsapp') {
+                    await this.broadcastToWebChat({ type: 'message', from: 'assistant', text: '', thought: response.thought });
+                }
+                // (WebChat already receives the thought via the main flow if needed, 
+                // but usually thought is for mirroring from WhatsApp to WebChat)
+            }
+        }
 
         // Mirroring Agent Response: If we replied to the owner, notify the other channel too
-        if (this.isOwner(channel, peerId, metadata)) {
+        if (this.isOwner(channel, peerId, metadata) && !response.streamed) {
             if (channel === 'webchat') {
                 const ownerJid = this.getOwnerJid();
                 if (ownerJid) {
@@ -617,6 +668,10 @@ export class Gateway implements IGateway {
 
     /** Send a message out via a registered channel send callback */
     async send(channel: string, peerId: string, text: string, thought?: string): Promise<void> {
+        if (!text || !text.trim()) {
+            console.log(`[gateway-debug] Skipping empty message for channel=${channel}`);
+            return;
+        }
         console.log(`[gateway-debug] Attempting to send message to channel=${channel}, peerId=${peerId}`);
         const sendFn = this.sendCallbacks.get(channel);
         if (!sendFn) {
@@ -743,37 +798,40 @@ export class Gateway implements IGateway {
      * List all available skills, categorized by native, project, and prompt-driven.
      */
     listAvailableSkills(): { native: any[], project: any[], prompt: any[] } {
-        const native = [
-            { name: 'gmail', description: 'Read and send emails via Gmail.', type: 'native' },
-            { name: 'google_calendar', description: 'Manage calendar events.', type: 'native' },
-            { name: 'google_web_search', description: 'Search the web using Google Search.', type: 'native' },
-            { name: 'shell', description: 'Execute shell commands on the host system.', type: 'native' },
-            { name: 'terminal', description: 'Interact with terminal-based tools.', type: 'native' }
-        ];
-
+        // "project" = registered tool-based skills (MCP or local)
         const project = (this.skillRegistry.getDeclarations() || []).map(d => ({
             name: d.name,
             description: d.description,
             type: 'project'
         }));
 
+        // "native" = built-in tools from gemini-cli (non-extensible)
+        const native = [
+            { name: 'google_web_search', description: 'Search the web using Google Search.', type: 'native' },
+            { name: 'run_code', description: 'Execute code in a sandboxed environment.', type: 'native' }
+        ];
+
+        // "prompt" = prompt-driven skills (OpenClaw style)
         const prompt = this.skillRegistry.getAllPromptSkills().map(s => ({
             name: s.name,
             description: s.description,
             type: 'prompt',
             status: s.status,
             reason: s.reason,
-            install: s.install,
-            path: s.path
+            install: s.install
+            // Path excluded for security (Major 3)
         }));
 
         return { native, project, prompt };
     }
 
     /**
-     * Install dependencies for a prompt-driven skill.
+     * Install dependencies for a prompt-driven skill (Asynchronous, secure).
      */
     async installSkill(name: string): Promise<{ success: boolean, output: string }> {
+        const { promisify } = await import('node:util');
+        const { execFile } = await import('node:child_process');
+        const execFileAsync = promisify(execFile);
         const skills = this.skillRegistry.getAllPromptSkills();
         const skill = skills.find(s => s.name === name);
 
@@ -782,43 +840,55 @@ export class Gateway implements IGateway {
             throw new Error(`Skill ${name} has no installation instructions`);
         }
 
-        const { execSync } = await import('node:child_process');
         let output = `[install] Starting installation for ${name}...\n`;
 
         for (const step of skill.install) {
-            output += `[install] Execution step: ${step.label || step.id} (${step.kind})\n`;
+            const label = step.label || step.id || step.kind;
+            output += `[install] Step: ${label} (${step.kind})\n`;
             try {
-                let cmd = '';
+                let file = '';
+                let args: string[] = [];
+
                 switch (step.kind) {
                     case 'go':
-                        cmd = `go install ${step.module}`;
+                        if (!step.module) throw new Error('go: missing module');
+                        file = 'go'; args = ['install', step.module];
                         break;
                     case 'npm':
-                        cmd = `npm install -g ${step.module || step.id}`;
+                        const pkg = step.module || step.id;
+                        if (!pkg) throw new Error('npm: missing module/id');
+                        file = 'npm'; args = ['install', '-g', pkg];
                         break;
                     case 'brew':
-                        cmd = `brew install ${step.id}`;
+                        if (!step.id) throw new Error('brew: missing id');
+                        file = 'brew'; args = ['install', step.id];
                         break;
                     case 'pip':
-                        cmd = `pip install ${step.id}`;
+                        if (!step.id) throw new Error('pip: missing id');
+                        file = 'pip3'; args = ['install', step.id];
                         break;
                     case 'shell':
-                        cmd = step.command;
+                        if (!step.command) throw new Error('shell: missing command');
+                        console.warn(`[install/security] Executing shell command for ${name}: ${step.command}`);
+                        file = '/bin/sh'; args = ['-c', step.command];
                         break;
                     default:
-                        output += `[install] WARNING: Unknown installation kind: ${step.kind}\n`;
+                        output += `[install] SKIP: unknown kind "${step.kind}"\n`;
                         continue;
                 }
 
-                if (cmd) {
-                    output += `[install] Running: ${cmd}\n`;
-                    const res = execSync(cmd, { stdio: 'pipe', encoding: 'utf8' });
-                    output += res + '\n';
+                if (file) {
+                    const { stdout, stderr } = await execFileAsync(file, args, {
+                        timeout: 120_000,
+                        env: { ...process.env }
+                    });
+                    if (stdout) output += stdout;
+                    if (stderr) output += `[stderr] ${stderr}`;
                 }
             } catch (err: any) {
                 output += `[install] ERROR: ${err.message}\n`;
-                if (err.stdout) output += err.stdout + '\n';
-                if (err.stderr) output += err.stderr + '\n';
+                if (err.stdout) output += err.stdout;
+                if (err.stderr) output += err.stderr;
                 return { success: false, output };
             }
         }
@@ -826,8 +896,42 @@ export class Gateway implements IGateway {
         // Refresh registry after installation
         this.skillRegistry.refreshPromptSkills();
 
-        output += `[install] Successfully installed ${name}.\n`;
+        output += `[install] ✅ Successfully installed ${name}.\n`;
         return { success: true, output };
+    }
+
+    /**
+     * Configure environment variables for a prompt-driven skill.
+     */
+    async configureSkill(name: string, envVars: Record<string, string>): Promise<{ success: boolean, status: string }> {
+        const skills = this.skillRegistry.getAllPromptSkills();
+        const skill = skills.find(s => s.name === name);
+        if (!skill) throw new Error(`Skill ${name} not found`);
+
+        // Validation: only allowed keys
+        const allowedKeys = skill.requiredEnv.map(e => e.key);
+        const invalidKeys = Object.keys(envVars || {}).filter(k => !allowedKeys.includes(k));
+        if (invalidKeys.length > 0) {
+            throw new Error(`Invalid env keys: ${invalidKeys.join(', ')}`);
+        }
+
+        // Apply to process.env immediately
+        for (const [key, value] of Object.entries(envVars || {})) {
+            process.env[key] = value;
+        }
+
+        // Persist to .env
+        const { overwriteEnvVariables } = await import('@geminiclaw/core');
+        await overwriteEnvVariables(envVars || {});
+
+        // Refresh cache
+        this.skillRegistry.refreshPromptSkills();
+
+        const updatedSkill = this.skillRegistry.getAllPromptSkills().find(s => s.name === name);
+        return {
+            success: true,
+            status: updatedSkill?.status ?? 'enabled'
+        };
     }
 
     getOverviewStats(): { instances: number, sessions: number, cronJobs: number, tickInterval: number } {

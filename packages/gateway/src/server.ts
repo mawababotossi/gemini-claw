@@ -284,6 +284,18 @@ async function main(): Promise<void> {
         }
     });
 
+    // API: Configure skill environment variables
+    app.post('/api/skills/:name/configure', async (req, res) => {
+        try {
+            const { name } = req.params;
+            const { envVars } = req.body as { envVars: Record<string, string> };
+            const result = await gateway.configureSkill(name, envVars);
+            res.json(result);
+        } catch (err: any) {
+            res.status(400).json({ error: err.message });
+        }
+    });
+
     // API: List available models
     app.get('/api/models', (req, res) => {
         const models = gateway.listAvailableModels();

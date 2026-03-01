@@ -139,6 +139,11 @@ export const api = {
         return response.data;
     },
 
+    async configureSkill(name: string, envVars: Record<string, string>): Promise<{ success: boolean, status: string }> {
+        const response = await axios.post(`${API_BASE_URL}/skills/${name}/configure`, { envVars });
+        return response.data;
+    },
+
     async getSessions(): Promise<any[]> {
         const response = await axios.get(`${API_BASE_URL}/sessions`);
         return response.data;

@@ -82,15 +82,13 @@ function EmptyState({ icon, title, description }: { icon: React.ReactNode; title
 // ─── Tab: Overview ──────────────────────────────────────────────────────────
 
 function OverviewTab({
-    formData, setFormData, models, isCreating, onSave, onReload, isSaving
+    formData, setFormData, models, isCreating, onSave
 }: {
     formData: AgentConfig;
     setFormData: (d: AgentConfig) => void;
     models: string[];
     isCreating: boolean;
     onSave: (e: React.FormEvent) => void;
-    onReload: () => void;
-    isSaving: boolean;
 }) {
     const togglePermission = (id: string) => {
         const current = formData.allowedPermissions ?? [];
@@ -163,6 +161,32 @@ function OverviewTab({
                 />
             </FormField>
 
+            {/* Auth */}
+            <SectionTitle>Authentication</SectionTitle>
+            <div className="form-row split-form">
+                <FormField label="Auth Type">
+                    <select
+                        className="form-select"
+                        value={formData.authType ?? 'oauth-personal'}
+                        onChange={e => setFormData({ ...formData, authType: e.target.value as any })}
+                    >
+                        <option value="oauth-personal">OAuth (Personal)</option>
+                        <option value="gemini-api-key">Gemini API Key</option>
+                        <option value="vertex-ai">Vertex AI</option>
+                    </select>
+                </FormField>
+                <FormField label="API Key" hint="Only required for gemini-api-key auth.">
+                    <input
+                        className="form-input"
+                        type="password"
+                        value={formData.apiKey ?? ''}
+                        onChange={e => setFormData({ ...formData, apiKey: e.target.value })}
+                        placeholder="Leave empty to use env variable"
+                        disabled={formData.authType !== 'gemini-api-key'}
+                    />
+                </FormField>
+            </div>
+
             {/* Heartbeat */}
             <SectionTitle>Heartbeat</SectionTitle>
             <div className="form-row split-form">
@@ -186,32 +210,6 @@ function OverviewTab({
                         onChange={e => setFormData({ ...formData, heartbeat: { ...(formData.heartbeat ?? {}), enabled: formData.heartbeat?.enabled ?? false, cron: e.target.value } })}
                         placeholder="0 8,20 * * * (UTC)"
                         disabled={!formData.heartbeat?.enabled}
-                    />
-                </FormField>
-            </div>
-
-            {/* Auth */}
-            <SectionTitle>Authentication</SectionTitle>
-            <div className="form-row split-form">
-                <FormField label="Auth Type">
-                    <select
-                        className="form-select"
-                        value={formData.authType ?? 'oauth-personal'}
-                        onChange={e => setFormData({ ...formData, authType: e.target.value as any })}
-                    >
-                        <option value="oauth-personal">OAuth (Personal)</option>
-                        <option value="gemini-api-key">Gemini API Key</option>
-                        <option value="vertex-ai">Vertex AI</option>
-                    </select>
-                </FormField>
-                <FormField label="API Key" hint="Only required for gemini-api-key auth.">
-                    <input
-                        className="form-input"
-                        type="password"
-                        value={formData.apiKey ?? ''}
-                        onChange={e => setFormData({ ...formData, apiKey: e.target.value })}
-                        placeholder="Leave empty to use env variable"
-                        disabled={formData.authType !== 'gemini-api-key'}
                     />
                 </FormField>
             </div>
@@ -255,17 +253,6 @@ function OverviewTab({
                         </label>
                     );
                 })}
-            </div>
-
-            {/* Actions */}
-            <div className="tab-actions">
-                <button type="button" className="btn btn-outline" onClick={onReload} disabled={isSaving}>
-                    <RefreshCw size={14} /> Reload Config
-                </button>
-                <button type="submit" className="btn btn-primary" disabled={isSaving}>
-                    {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-                    {isCreating ? 'Create Agent' : 'Save Changes'}
-                </button>
             </div>
         </form>
     );
@@ -440,7 +427,7 @@ function ToolsTab({ agent }: { agent: AgentConfig }) {
 function SkillsTab({ availableSkills, agent, onToggleSkill }: {
     availableSkills: { native: any[]; project: any[]; prompt: any[] };
     agent: AgentConfig;
-    onToggleSkill: (skillName: string) => void;
+    onToggleSkill: (skillName: string, isPrompt?: boolean) => void;
 }) {
     const [search, setSearch] = useState('');
     const granted = agent.allowedPermissions ?? [];
@@ -456,21 +443,26 @@ function SkillsTab({ availableSkills, agent, onToggleSkill }: {
 
     const SkillRow = ({ skill, isPrompt }: { skill: any; isPrompt?: boolean }) => {
         const isGranted = isPrompt ? enabledSkills.includes(skill.name) : granted.includes(skill.name);
+        // Prompt skills can only be toggled if status is 'enabled'
+        // Native/Project skills can always be toggled (they update allowedPermissions)
+        const canToggle = !isPrompt || skill.status === 'enabled';
+
         return (
             <div
-                className={`skill-item-interactive ${isGranted ? 'active' : ''} ${skill.status === 'disabled' ? 'disabled' : ''}`}
-                onClick={() => isPrompt && skill.status !== 'disabled' && onToggleSkill(skill.name)}
+                className={`skill-item-interactive ${isGranted ? 'active' : ''} ${!canToggle ? 'disabled' : ''}`}
+                onClick={() => canToggle && onToggleSkill(skill.name, isPrompt)}
                 style={{
                     padding: '0.75rem 1rem', borderRadius: 'var(--radius-md)',
                     background: 'var(--bg-card)', border: '1px solid var(--border)',
                     display: 'flex', alignItems: 'flex-start', gap: '0.75rem',
-                    cursor: (isPrompt && skill.status !== 'disabled') ? 'pointer' : 'default',
+                    cursor: canToggle ? 'pointer' : 'default',
                     transition: 'all 0.2s ease',
                     position: 'relative',
-                    overflow: 'hidden'
+                    overflow: 'hidden',
+                    opacity: (!canToggle && !isGranted) ? 0.6 : 1
                 }}
             >
-                {isPrompt && isGranted && <div style={{ position: 'absolute', top: 0, left: 0, width: 3, height: '100%', background: 'var(--primary)' }} />}
+                {isGranted && <div style={{ position: 'absolute', top: 0, left: 0, width: 3, height: '100%', background: 'var(--primary)' }} />}
 
                 <div style={{
                     width: 32, height: 32, borderRadius: 'var(--radius-sm)', flexShrink: 0,
@@ -486,25 +478,25 @@ function SkillsTab({ availableSkills, agent, onToggleSkill }: {
                         <span style={{
                             fontSize: '0.67rem', fontWeight: 700, padding: '0.15rem 0.45rem',
                             borderRadius: 'var(--radius-full)', textTransform: 'uppercase',
-                            background: isGranted ? 'rgba(16,185,129,.1)' : 'rgba(239,68,68,.1)',
-                            color: isGranted ? 'var(--success)' : 'var(--danger)',
+                            background: isGranted ? 'rgba(16,185,129,.1)' : (canToggle ? 'rgba(239,68,68,.1)' : 'rgba(156,163,175,.1)'),
+                            color: isGranted ? 'var(--success)' : (canToggle ? 'var(--danger)' : 'var(--text-muted)'),
                         }}>
-                            {isGranted ? 'Active' : 'Blocked'}
+                            {isGranted ? 'Active' : (canToggle ? 'Disabled' : 'Unavailable')}
                         </span>
-                        {skill.status === 'disabled' && (
+                        {isPrompt && skill.status !== 'enabled' && (
                             <span style={{ fontSize: '0.72rem', color: 'var(--warning)', fontStyle: 'italic' }}>
-                                (Needs Setup)
+                                ({skill.status === 'needs-config' ? 'Needs Config' : 'Needs Install'})
                             </span>
                         )}
                     </div>
                     <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0 }}>{skill.description}</p>
-                    {isPrompt && skill.status === 'disabled' && (
-                        <p style={{ fontSize: '10px', color: 'var(--danger)', marginTop: '4px', opacity: 0.8 }}>
+                    {isPrompt && skill.status !== 'enabled' && (
+                        <p style={{ fontSize: '10px', color: skill.status === 'needs-config' ? 'var(--warning)' : 'var(--danger)', marginTop: '4px', opacity: 0.8 }}>
                             {skill.reason}
                         </p>
                     )}
                 </div>
-                {isPrompt && skill.status !== 'disabled' && (
+                {canToggle && (
                     <div style={{ alignSelf: 'center' }}>
                         <input
                             type="checkbox"
@@ -945,14 +937,27 @@ export function Agents() {
                                         )}
                                     </p>
                                 </div>
-                                {!isCreating && selectedAgentName && (
-                                    <button
-                                        className="btn btn-sm btn-ghost text-danger"
-                                        onClick={() => handleDelete(selectedAgentName)}
-                                    >
-                                        <Trash2 size={13} /> Delete Agent
+                                <div className="flex items-center gap-2">
+                                    <button className="btn btn-sm btn-outline" onClick={fetchAgents} disabled={isSaving}>
+                                        <RefreshCw size={13} className={isSaving ? "animate-spin" : ""} />
                                     </button>
-                                )}
+                                    <button
+                                        className="btn btn-sm btn-primary gap-2"
+                                        onClick={handleSave}
+                                        disabled={isSaving}
+                                    >
+                                        {isSaving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+                                        {isCreating ? 'Create' : 'Save'}
+                                    </button>
+                                    {!isCreating && selectedAgentName && (
+                                        <button
+                                            className="btn btn-sm btn-ghost text-danger p-2"
+                                            onClick={() => handleDelete(selectedAgentName)}
+                                        >
+                                            <Trash2 size={13} />
+                                        </button>
+                                    )}
+                                </div>
                             </div>
 
                             {/* Tab navigation */}
@@ -981,13 +986,11 @@ export function Agents() {
                             <div className="details-content-area p-5" ref={detailsRef}>
                                 {activeTab === 'overview' && (
                                     <OverviewTab
-                                        formData={formData}
+                                        formData={formData!}
                                         setFormData={setFormData}
                                         models={models}
                                         isCreating={isCreating}
                                         onSave={handleSave}
-                                        onReload={fetchAgents}
-                                        isSaving={isSaving}
                                     />
                                 )}
                                 {activeTab === 'files' && (
@@ -1003,12 +1006,20 @@ export function Agents() {
                                     <SkillsTab
                                         availableSkills={availableSkills}
                                         agent={formData}
-                                        onToggleSkill={(skillName) => {
-                                            const current = formData.skills ?? [];
-                                            const next = current.includes(skillName)
-                                                ? current.filter(s => s !== skillName)
-                                                : [...current, skillName];
-                                            setFormData({ ...formData, skills: next });
+                                        onToggleSkill={(skillName, isPrompt) => {
+                                            if (isPrompt) {
+                                                const current = formData.skills ?? [];
+                                                const next = current.includes(skillName)
+                                                    ? current.filter(s => s !== skillName)
+                                                    : [...current, skillName];
+                                                setFormData({ ...formData, skills: next });
+                                            } else {
+                                                const current = formData.allowedPermissions ?? [];
+                                                const next = current.includes(skillName)
+                                                    ? current.filter(p => p !== skillName)
+                                                    : [...current, skillName];
+                                                setFormData({ ...formData, allowedPermissions: next });
+                                            }
                                         }}
                                     />
                                 )}

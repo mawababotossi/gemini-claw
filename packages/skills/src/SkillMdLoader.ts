@@ -7,6 +7,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import matter from 'gray-matter';
+import { execFileSync } from 'node:child_process';
+
+export interface SkillMdEnvVar {
+    key: string;           // Name of the variable: "OPENAI_API_KEY"
+    description?: string;  // Simple description
+    secret?: boolean;      // true if it's a secret (displayed as password)
+    url?: string;          // Link to documentation
+}
 
 export interface SkillMd {
     name: string;
@@ -15,9 +23,12 @@ export interface SkillMd {
     dir: string;
     metadata: any;
     body: string;
-    status: 'enabled' | 'disabled';
+    status: 'enabled' | 'needs-config' | 'needs-install';
     reason?: string;
     install?: any[];
+    requiredEnv: SkillMdEnvVar[];
+    missingEnv: string[];
+    missingBins: string[];
 }
 
 export class SkillMdLoader {
@@ -34,7 +45,10 @@ export class SkillMdLoader {
         const skills: SkillMd[] = [];
 
         for (const baseDir of this.skillDirs) {
-            if (!fs.existsSync(baseDir)) continue;
+            if (!fs.existsSync(baseDir)) {
+                console.warn(`[skills/loader] Directory not found: ${baseDir}`);
+                continue;
+            }
 
             const entries = fs.readdirSync(baseDir, { withFileTypes: true });
             for (const entry of entries) {
@@ -46,6 +60,9 @@ export class SkillMdLoader {
                             const { data, content: body } = matter(content);
 
                             if (data.name && data.description) {
+                                const envDescriptions = data.metadata?.openclaw?.envDescriptions ?? {};
+                                const requiredEnvKeys: string[] = data.metadata?.openclaw?.requires?.env ?? [];
+
                                 skills.push({
                                     name: data.name,
                                     description: data.description,
@@ -53,13 +70,24 @@ export class SkillMdLoader {
                                     dir: path.dirname(skillPath),
                                     metadata: data.metadata || {},
                                     body: body.trim(),
-                                    status: 'enabled', // Default, will be filtered
-                                    install: data.metadata?.openclaw?.install
+                                    status: 'enabled', // Default, will be recalculated in filter()
+                                    install: data.metadata?.openclaw?.install,
+                                    requiredEnv: requiredEnvKeys.map((key: string) => ({
+                                        key,
+                                        description: envDescriptions[key]?.description,
+                                        secret: envDescriptions[key]?.secret !== false, // secret by default
+                                        url: envDescriptions[key]?.url,
+                                    })),
+                                    missingEnv: [],
+                                    missingBins: [],
                                 });
                             }
                         } catch (err) {
                             console.error(`[skills/loader] Failed to parse skill at ${skillPath}:`, err);
                         }
+                    } else {
+                        // Minor 2: scan depth warning
+                        console.debug(`[skills/loader] Folder "${entry.name}" in ${baseDir} has no SKILL.md, skipping.`);
                     }
                 }
             }
@@ -70,61 +98,73 @@ export class SkillMdLoader {
 
     /**
      * Filter skills based on available environment.
-     * Updates the status and reason for each skill and returns only the enabled ones.
+     * Returns a new array of ENABLED skills.
+     * Updates the status/reason for original objects for dashboard display.
      */
     public filter(skills: SkillMd[]): SkillMd[] {
+        const active: SkillMd[] = [];
+
         for (const skill of skills) {
             const requires = skill.metadata?.openclaw?.requires;
+
+            // Reset diagnostic fields
+            skill.missingBins = [];
+            skill.missingEnv = [];
+
             if (!requires) {
                 skill.status = 'enabled';
+                active.push({ ...skill, status: 'enabled' });
                 continue;
             }
 
-            // Check bins (all required)
+            // --- Check binaries ---
             if (requires.bins && Array.isArray(requires.bins)) {
-                const missing = requires.bins.filter((bin: string) => !this.isBinAvailable(bin));
-                if (missing.length > 0) {
-                    skill.status = 'disabled';
-                    skill.reason = `Missing binaries: ${missing.join(', ')}`;
-                    continue;
-                }
+                skill.missingBins = requires.bins.filter((bin: string) => !this.isBinAvailable(bin));
             }
-
-            // Check anyBins (at least one required)
             if (requires.anyBins && Array.isArray(requires.anyBins)) {
                 const available = requires.anyBins.some((bin: string) => this.isBinAvailable(bin));
                 if (!available) {
-                    skill.status = 'disabled';
-                    skill.reason = `Missing any of binaries: ${requires.anyBins.join(', ')}`;
-                    continue;
+                    skill.missingBins.push(...requires.anyBins.map((b: string) => `${b} (any)`));
                 }
             }
 
-            // Check env (all required)
+            // --- Check environment variables ---
             if (requires.env && Array.isArray(requires.env)) {
-                const missing = requires.env.filter((envVar: string) => !process.env[envVar]);
-                if (missing.length > 0) {
-                    skill.status = 'disabled';
-                    skill.reason = `Missing environment variables: ${missing.join(', ')}`;
-                    continue;
-                }
+                skill.missingEnv = requires.env.filter((envVar: string) => !process.env[envVar]);
             }
 
-            skill.status = 'enabled';
+            // --- Status Classification ---
+            if (skill.missingBins.length > 0) {
+                // Missing binaries -> needs installation
+                skill.status = 'needs-install';
+                skill.reason = `Missing binaries: ${skill.missingBins.join(', ')}`;
+            } else if (skill.missingEnv.length > 0) {
+                // Binaries OK but env missing -> needs config
+                skill.status = 'needs-config';
+                skill.reason = `Configuration required: ${skill.missingEnv.join(', ')}`;
+            } else {
+                // Everything OK
+                skill.status = 'enabled';
+                skill.reason = undefined;
+                active.push({ ...skill, status: 'enabled' });
+            }
         }
 
-        return skills.filter(s => s.status === 'enabled');
+        return active;
+    }
+
+    public getSkillDirs(): string[] {
+        return this.skillDirs;
     }
 
     public isBinAvailable(bin: string): boolean {
-        // Simple check for binary availability in PATH
-        // In a real scenario, we might want a more robust check (command -v)
+        // Validation: binaire name must be simple alphanumeric
+        if (!/^[a-zA-Z0-9_\-\.]+$/.test(bin)) return false;
+
         try {
-            const paths = (process.env.PATH || '').split(path.delimiter);
-            for (const p of paths) {
-                if (fs.existsSync(path.join(p, bin))) return true;
-            }
-            return false;
+            const cmd = process.platform === 'win32' ? 'where' : 'which';
+            execFileSync(cmd, [bin], { stdio: 'pipe' });
+            return true;
         } catch {
             return false;
         }
@@ -138,13 +178,12 @@ export class SkillMdLoader {
 
         let prompt = `\n<available_skills>\n`;
         prompt += `The following skills provide specialized instructions for specific tasks.\n`;
-        prompt += `If a task matches a skill's description, use the "read" tool to load its full SKILL.md file.\n`;
+        prompt += `If a task matches a skill's description, use the "read_skill" tool with the skill's name.\n`;
 
         for (const skill of skills) {
             prompt += `  <skill>\n`;
             prompt += `    <name>${skill.name}</name>\n`;
             prompt += `    <description>${skill.description}</description>\n`;
-            prompt += `    <location>${skill.path}</location>\n`;
             prompt += `  </skill>\n`;
         }
 

@@ -14,6 +14,7 @@ type Rejecter = (reason: unknown) => void;
 interface QueueItem {
     msg: InboundMessage;
     peerAgents?: { name: string; model: string }[];
+    options?: { onChunk?: (text: string) => Promise<void> };
     resolve: Resolver;
     reject: Rejecter;
 }
@@ -24,7 +25,12 @@ export class MessageQueue {
     private static MAX_QUEUE_PER_SESSION = 10;
 
     /** Enqueue a message for a session and return a promise of the response */
-    enqueue(msg: InboundMessage, runtime: AgentRuntime, peerAgents?: { name: string; model: string }[]): Promise<AgentResponse> {
+    enqueue(
+        msg: InboundMessage,
+        runtime: AgentRuntime,
+        peerAgents?: { name: string; model: string }[],
+        options?: { onChunk?: (text: string) => Promise<void> }
+    ): Promise<AgentResponse> {
         return new Promise<AgentResponse>((resolve, reject) => {
             const sessionId = msg.sessionId;
             if (!this.queues.has(sessionId)) {
@@ -37,7 +43,7 @@ export class MessageQueue {
                 return reject(new Error('Queue full. Please wait for the agent to finish its current tasks.'));
             }
 
-            queue.push({ msg, peerAgents, resolve, reject });
+            queue.push({ msg, peerAgents, options, resolve, reject });
             this.drain(sessionId, runtime).catch(err => {
                 console.error(`[gateway/queue] Unexpected error in drain for ${sessionId}:`, err);
             });
@@ -56,7 +62,7 @@ export class MessageQueue {
             while (queue.length > 0) {
                 const item = queue.shift()!;
                 try {
-                    const response = await runtime.processMessage(item.msg, item.peerAgents);
+                    const response = await runtime.processMessage(item.msg, item.peerAgents, item.options);
                     item.resolve(response);
                 } catch (err) {
                     item.reject(err);

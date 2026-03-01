@@ -46,4 +46,5 @@ export interface AgentResponse {
     sessionId: string;
     thought?: string;
     tokensUsed?: number;
+    streamed?: boolean;
 }
