@@ -482,6 +482,50 @@ async function main(): Promise<void> {
         });
     });
 
+    // --- Unified Skill Management API ---
+
+    // Lister tous les skills avec leur statut unifié
+    app.get('/api/skills', (req, res) => {
+        try {
+            const agentName = req.query.agent as string | undefined;
+            const manifests = gateway.getAllSkillManifests(agentName);
+            res.json(manifests);
+        } catch (err: any) {
+            res.status(500).json({ error: err.message });
+        }
+    });
+
+    // Désactiver manuellement un skill
+    app.post('/api/skills/:name/disable', (req, res) => {
+        try {
+            gateway.disableSkill(req.params.name);
+            res.json({ success: true });
+        } catch (err: any) {
+            res.status(500).json({ error: err.message });
+        }
+    });
+
+    // Réactiver un skill désactivé
+    app.post('/api/skills/:name/enable', (req, res) => {
+        try {
+            gateway.enableSkill(req.params.name);
+            res.json({ success: true });
+        } catch (err: any) {
+            res.status(500).json({ error: err.message });
+        }
+    });
+
+    // Assigner/retirer un skill d'un agent spécifique
+    app.patch('/api/agents/:name/skills', async (req, res) => {
+        try {
+            const { skills }: { skills: string[] } = req.body;
+            await gateway.updateAgentSkills(req.params.name, skills);
+            res.json({ success: true });
+        } catch (err: any) {
+            res.status(500).json({ error: err.message });
+        }
+    });
+
     const apiPort = config.gatewayPort ?? 3002;
     app.listen(apiPort, () => {
         console.log(`[geminiclaw] Admin API ready on port ${apiPort}`);

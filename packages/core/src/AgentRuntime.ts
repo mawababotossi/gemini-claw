@@ -93,7 +93,20 @@ export class AgentRuntime extends EventEmitter {
                     fs.mkdirSync(cwd, { recursive: true });
                 }
             }
-            const acpSessionId = await bridge.createSession(cwd, this.config.mcpServers || []);
+            const mcpServers = (this.config.mcpServers || []).map(s => {
+                if (s.url && s.url.includes('/api/mcp/messages')) {
+                    return {
+                        ...s,
+                        headers: {
+                            ...s.headers,
+                            'x-agent-name': this.config.name,
+                            'x-agent-skills': (this.config.skills || []).join(',')
+                        }
+                    };
+                }
+                return s;
+            });
+            const acpSessionId = await bridge.createSession(cwd, mcpServers);
             this.sessionMap.set(userSessionId, acpSessionId);
         }
         return this.sessionMap.get(userSessionId)!;

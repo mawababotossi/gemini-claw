@@ -23,7 +23,7 @@ export interface SkillMd {
     dir: string;
     metadata: any;
     body: string;
-    status: 'enabled' | 'needs-config' | 'needs-install';
+    status: 'enabled' | 'disabled' | 'needs-config' | 'needs-install';
     reason?: string;
     install?: any[];
     requiredEnv: SkillMdEnvVar[];
@@ -157,17 +157,29 @@ export class SkillMdLoader {
         return this.skillDirs;
     }
 
+    private binCache: Map<string, { available: boolean, checkedAt: number }> = new Map();
+    private readonly BIN_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
     public isBinAvailable(bin: string): boolean {
         // Validation: binaire name must be simple alphanumeric
         if (!/^[a-zA-Z0-9_\-\.]+$/.test(bin)) return false;
 
+        const cached = this.binCache.get(bin);
+        if (cached && (Date.now() - cached.checkedAt) < this.BIN_CACHE_TTL_MS) {
+            return cached.available;
+        }
+
+        let available = false;
         try {
             const cmd = process.platform === 'win32' ? 'where' : 'which';
             execFileSync(cmd, [bin], { stdio: 'pipe' });
-            return true;
+            available = true;
         } catch {
-            return false;
+            available = false;
         }
+
+        this.binCache.set(bin, { available, checkedAt: Date.now() });
+        return available;
     }
 
     /**

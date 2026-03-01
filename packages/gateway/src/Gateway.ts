@@ -49,7 +49,7 @@ export class Gateway implements IGateway {
         this.transcripts = new TranscriptStore(config.dataDir);
 
         const localSkillsPath = path.join(config.dataDir, 'skills');
-        this.skillRegistry = new SkillRegistry([localSkillsPath]);
+        this.skillRegistry = new SkillRegistry([localSkillsPath], config.dataDir);
 
         this.mcpServer = new SkillMcpServer(this.skillRegistry);
 
@@ -1116,5 +1116,41 @@ export class Gateway implements IGateway {
             thought: msg.thought,
             timestamp: Date.now()
         });
+    }
+
+    // --- Skill Management API ---
+
+    public getAllSkillManifests(agentName?: string): any[] {
+        const manifests = this.skillRegistry.getAllManifests();
+
+        if (agentName) {
+            const agent = this.registry.get(agentName);
+            const whitelist = agent.getConfig().skills || [];
+            if (whitelist.length > 0) {
+                return manifests.map(m => ({
+                    ...m,
+                    isAuthorized: whitelist.includes(m.name)
+                }));
+            }
+        }
+
+        return manifests;
+    }
+
+    public disableSkill(name: string): void {
+        this.skillRegistry.disableSkill(name);
+    }
+
+    public enableSkill(name: string): void {
+        this.skillRegistry.enableSkill(name);
+    }
+
+    public async updateAgentSkills(agentName: string, skills: string[]): Promise<void> {
+        const agent = this.registry.get(agentName);
+        const config = agent.getConfig();
+        config.skills = skills;
+        // Logic to persist config change depends on implementation (git, json write, etc)
+        // Here we assume registry.update or similar exists, or we just modify in-memory
+        await this.updateAgent(agentName, config);
     }
 }

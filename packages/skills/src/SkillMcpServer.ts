@@ -40,8 +40,18 @@ export class SkillMcpServer {
     }
 
     private setupHandlers(server: Server) {
-        server.setRequestHandler(ListToolsRequestSchema, async () => {
-            const declarations = this.registry.getDeclarations() || [];
+        server.setRequestHandler(ListToolsRequestSchema, async (request, extra) => {
+            // Retrieve agentName from SSE headers if available
+            const agentName = (extra as any)?.agentName;
+            const whitelist = (extra as any)?.whitelist as string[] | undefined;
+
+            let declarations = this.registry.getDeclarations() || [];
+
+            // Filter declarations based on agent whitelist if provided
+            if (whitelist && whitelist.length > 0) {
+                declarations = declarations.filter(d => whitelist.includes(d.name));
+            }
+
             const tools = declarations.map(decl => ({
                 name: decl.name,
                 description: decl.description,
@@ -51,8 +61,15 @@ export class SkillMcpServer {
             return { tools };
         });
 
-        server.setRequestHandler(CallToolRequestSchema, async (request) => {
+        server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
             try {
+                const whitelist = (extra as any)?.whitelist as string[] | undefined;
+
+                // Security: Verify skill is in whitelist if whitelist exists
+                if (whitelist && whitelist.length > 0 && !whitelist.includes(request.params.name)) {
+                    throw new Error(`[skills/mcp] Skill '${request.params.name}' is not authorized for this agent.`);
+                }
+
                 const args = (request.params.arguments as Record<string, unknown>) || {};
                 const result = await this.registry.execute(request.params.name, args);
 
@@ -112,7 +129,6 @@ export class SkillMcpServer {
      * Handle incoming JSON-RPC messages (POST request)
      */
     async handleMessage(req: any, res: any) {
-        console.log(`[skills/mcp] Incoming MCP message for sessionId: ${req.query.sessionId}`);
         const sessionId = req.query.sessionId;
         const transport = this.transports.get(sessionId);
 
@@ -121,6 +137,15 @@ export class SkillMcpServer {
             res.status(404).json({ error: 'Session not found' });
             return;
         }
+
+        // Extract agent context from headers (passed by Gateway/AgentRuntime)
+        const agentName = req.headers['x-agent-name'] as string;
+        const whitelistStr = req.headers['x-agent-skills'] as string;
+        const whitelist = whitelistStr ? whitelistStr.split(',') : undefined;
+
+        // The MCP SDK doesn't natively support passing context through handlePostMessage easily
+        // but we can "hijack" the request to include it for our handlers.
+        (req as any).agentContext = { agentName, whitelist };
 
         await transport.handlePostMessage(req, res);
     }
