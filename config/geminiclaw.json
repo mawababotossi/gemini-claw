@@ -47,11 +47,9 @@
                 }
             ],
             "allowedPermissions": [
-                "getCurrentTime",
                 "google_web_search",
                 "shell",
                 "terminal",
-                "readMemoryFile",
                 "updateMemoryFile",
                 "delegate_task",
                 "schedule_task",
@@ -63,7 +61,8 @@
                 "run_shell_command",
                 "network",
                 "read_skill",
-                "run_code"
+                "run_code",
+                "getCurrentTime"
             ],
             "baseDir": "../../data/agents/main",
             "status": "Healthy",
@@ -71,7 +70,8 @@
                 "nano-pdf",
                 "skill-creator",
                 "weather",
-                "markdown-to-pdf"
+                "markdown-to-pdf",
+                "clawhub"
             ]
         },
         {

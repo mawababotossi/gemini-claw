@@ -4,6 +4,7 @@ dist/
 *.d.ts.map
 .env
 data/
+!data/skills/
 *.db
 .DS_Store
 *.log
