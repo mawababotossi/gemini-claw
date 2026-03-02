@@ -202,7 +202,7 @@ async function main(): Promise<void> {
     // Public Auth Routes
     app.post('/api/auth/login', strictLimiter, (req, res) => {
         const { token } = req.body;
-        const expectedToken = process.env['GEMINICLAW_API_TOKEN'];
+        const expectedToken = process.env['CLAWGATE_API_TOKEN'];
 
         if (!expectedToken) {
             return res.status(503).json({ error: 'Auth not configured on server' });

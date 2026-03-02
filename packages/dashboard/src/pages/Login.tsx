@@ -47,7 +47,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
                             type="password"
                             value={token}
                             onChange={(e) => setToken(e.target.value)}
-                            placeholder="GEMINICLAW_API_TOKEN"
+                            placeholder="CLAWGATE_API_TOKEN"
                             required
                         />
                     </div>

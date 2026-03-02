@@ -10,11 +10,11 @@ import { timingSafeEqual } from 'node:crypto';
  * or in an HttpOnly cookie 'gc_session'.
  */
 export function requireApiToken(req: Request, res: Response, next: NextFunction): void {
-    const expectedToken = process.env['GEMINICLAW_API_TOKEN'];
+    const expectedToken = process.env['CLAWGATE_API_TOKEN'];
 
     if (!expectedToken) {
         if (process.env['NODE_ENV'] === 'production') {
-            res.status(503).json({ error: 'GEMINICLAW_API_TOKEN not configured.' });
+            res.status(503).json({ error: 'CLAWGATE_API_TOKEN not configured.' });
             return;
         }
         console.warn('[api/auth] WARNING: API is unprotected in dev mode!');

@@ -76,7 +76,7 @@ async function checkEnv() {
 
     const content = fs.readFileSync(envPath, 'utf8');
     if (!content.includes('GEMINI_API_KEY=')) return 'GEMINI_API_KEY missing in .env';
-    if (!content.includes('GEMINICLAW_API_TOKEN=')) return 'GEMINICLAW_API_TOKEN missing in .env (Security P1)';
+    if (!content.includes('CLAWGATE_API_TOKEN=')) return 'CLAWGATE_API_TOKEN missing in .env (Security P1)';
 
     return true;
 }

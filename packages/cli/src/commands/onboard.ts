@@ -46,7 +46,7 @@ export const onboardCommand = new Command('onboard')
             {
                 type: 'input',
                 name: 'gatewayToken',
-                message: 'Token API Gateway (GEMINICLAW_API_TOKEN) :',
+                message: 'Token API Gateway (CLAWGATE_API_TOKEN) :',
                 default: crypto.randomUUID().replace(/-/g, '')
             },
             {
@@ -57,7 +57,7 @@ export const onboardCommand = new Command('onboard')
             },
         ]);
 
-        const home = process.env['GEMINICLAW_HOME'] || path.join(process.env['HOME']!, '.clawgate');
+        const home = process.env['CLAWGATE_HOME'] || path.join(process.env['HOME']!, '.clawgate');
 
         if (!fs.existsSync(home)) {
             fs.mkdirSync(home, { recursive: true });
@@ -68,7 +68,7 @@ export const onboardCommand = new Command('onboard')
             `GEMINI_API_KEY=${answers.geminiKey}`,
             answers.anthropicKey ? `ANTHROPIC_API_KEY=${answers.anthropicKey}` : '',
             answers.openaiKey ? `OPENAI_API_KEY=${answers.openaiKey}` : '',
-            `GEMINICLAW_API_TOKEN=${answers.gatewayToken}`,
+            `CLAWGATE_API_TOKEN=${answers.gatewayToken}`,
             `NODE_ENV=production`,
             answers.telegramToken ? `TELEGRAM_BOT_TOKEN=${answers.telegramToken}` : '',
         ].filter(Boolean).join('\n');
