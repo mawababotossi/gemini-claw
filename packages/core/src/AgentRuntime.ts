@@ -412,7 +412,7 @@ CRITICAL: You are an autonomous agent running within the GeminiClaw platform.
                 fs.writeFileSync(filePath, buffer);
 
                 try {
-                    const pdfParse = (await import('pdf-parse')).default;
+                    const pdfParse = ((await import('pdf-parse')) as any).default || (await import('pdf-parse')) as any;
                     const parsed = await pdfParse(buffer);
                     const textPreview = parsed.text.substring(0, 3000);
                     blocks.push(

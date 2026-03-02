@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
-/**
- * @license Apache-2.0
- * GeminiClaw — Installation Script
- */
+# @license Apache-2.0
+# GeminiClaw — Installation Script
 set -euo pipefail
 
 INSTALL_DIR="${GEMINICLAW_HOME:-$HOME/.geminiclaw}"

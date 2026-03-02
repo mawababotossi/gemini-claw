@@ -49,7 +49,7 @@ export class SkillMcpServer {
 
             // Filter declarations based on agent whitelist if provided
             if (whitelist && whitelist.length > 0) {
-                declarations = declarations.filter(d => whitelist.includes(d.name));
+                declarations = declarations.filter(d => d.name && whitelist.includes(d.name));
             }
 
             const tools = declarations.map(decl => ({

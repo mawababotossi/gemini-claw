@@ -16,10 +16,13 @@
         "@geminiclaw/skills": "workspace:^",
         "@google/gemini-cli-core": "latest",
         "croner": "^10.0.1",
+        "node-fetch": "2.7.0",
+        "pdf-parse": "^2.4.5",
         "zod": "^3.23.8"
     },
     "devDependencies": {
         "@types/node": "^22.0.0",
+        "@types/node-fetch": "2.6.12",
         "typescript": "^5.5.0",
         "vitest": "^2.0.0"
     }
