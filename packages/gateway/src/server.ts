@@ -72,7 +72,7 @@ async function main(): Promise<void> {
 
     // WebChat (always loaded — used as default dev channel)
     if (config.channels['webchat']?.enabled !== false) {
-        const { WebChatAdapter } = await import('@geminiclaw/channel-webchat');
+        const { WebChatAdapter } = await (import('@geminiclaw/channel-webchat') as any);
         const wcConfig = (config.channels['webchat'] ?? {}) as any;
         const wc = new WebChatAdapter(wcConfig.port ?? 3001);
         wc.connect(gateway as any);

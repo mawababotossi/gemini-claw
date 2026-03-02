@@ -16,7 +16,6 @@
         "@geminiclaw/core": "workspace:*",
         "@geminiclaw/memory": "workspace:*",
         "@geminiclaw/skills": "workspace:*",
-        "@geminiclaw/channel-webchat": "workspace:*",
         "@geminiclaw/channel-telegram": "workspace:*",
         "@geminiclaw/channel-whatsapp": "workspace:*",
         "dotenv": "^16.4.0",

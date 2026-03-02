@@ -237,9 +237,6 @@ importers:
       '@geminiclaw/channel-telegram':
         specifier: workspace:*
         version: link:../channels/telegram
-      '@geminiclaw/channel-webchat':
-        specifier: workspace:*
-        version: link:../channels/webchat
       '@geminiclaw/channel-whatsapp':
         specifier: workspace:*
         version: link:../channels/whatsapp
