@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { Smartphone, LogOut, Settings, Save, X, MessageSquare, CheckCircle2, Clock, ExternalLink, Power, Bot, Hash, Send } from 'lucide-react';
+import { Smartphone, LogOut, Settings, Save, X, MessageSquare, CheckCircle2, Clock, ExternalLink, Power, Bot, Hash, Send, Globe } from 'lucide-react';
 import { api } from '../services/api';
 import './Channels.css';
 
@@ -41,7 +41,7 @@ export function Channels() {
     useEffect(() => {
         fetchStatus();
         fetchAgents();
-        ['whatsapp', 'telegram', 'discord', 'slack'].forEach(fetchConfig);
+        ['whatsapp', 'telegram', 'discord', 'slack', 'webchat'].forEach(fetchConfig);
         const interval = setInterval(fetchStatus, 3000);
         return () => clearInterval(interval);
     }, []);
@@ -105,6 +105,7 @@ export function Channels() {
     };
 
     const channels = [
+        { id: 'webchat', name: 'WebChat', icon: <Globe size={32} />, desc: 'Built-in web chat interface served on a configurable port.' },
         { id: 'whatsapp', name: 'WhatsApp Adapter', icon: <Smartphone size={32} />, desc: 'Persistent connection via Baileys. Handles direct and group messages.' },
         { id: 'telegram', name: 'Telegram Adapter', icon: <Send size={32} />, desc: 'Official Bot API integration. Support for groups and inline mode.' },
         { id: 'discord', name: 'Discord Adapter', icon: <Hash size={32} />, desc: 'Discord.js integration. Monitor specific channels or DMs.' },
@@ -194,6 +195,19 @@ export function Channels() {
                                                     </select>
                                                 </div>
                                             </div>
+
+                                            {chan.id === 'webchat' && (
+                                                <div className="form-group">
+                                                    <label className="block text-xs font-semibold text-muted mb-2 uppercase">Port</label>
+                                                    <input
+                                                        type="number" className="form-control-v2"
+                                                        value={config.port || 3001}
+                                                        onChange={(e) => updateField(chan.id, 'port', parseInt(e.target.value, 10))}
+                                                        placeholder="3001"
+                                                    />
+                                                    <p className="text-xs text-muted mt-1">Port on which the WebChat HTTP server listens.</p>
+                                                </div>
+                                            )}
 
                                             {chan.id === 'whatsapp' && (
                                                 <>

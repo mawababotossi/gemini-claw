@@ -38,6 +38,7 @@ export interface AgentConfig {
     apiKey?: string;
     skills?: string[];
     provider?: string;
+    mcpServers?: { name: string; type: string; url?: string; headers?: any[] }[];
 }
 
 export interface AppStatus {

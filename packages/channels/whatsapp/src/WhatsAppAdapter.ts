@@ -230,11 +230,13 @@ export class WhatsAppAdapter {
                 const code = lastDisconnect?.error?.output?.statusCode;
                 const loggedOut = code === DisconnectReason?.loggedOut;
                 console.log('[whatsapp] Disconnected.', loggedOut ? 'Logged out.' : 'Reconnecting in 5s...');
+                (gateway as any).setWhatsAppConnected?.(false);
                 if (!loggedOut) setTimeout(() => this.startSocket(gateway), 5000);
             } else if (connection === 'open') {
                 this.status = 'connected';
                 this.qrStr = null;
                 console.log('[whatsapp] ✅ Connected!');
+                (gateway as any).setWhatsAppConnected?.(true);
 
                 // Declare initial presence to enable sendPresenceUpdate
                 try {

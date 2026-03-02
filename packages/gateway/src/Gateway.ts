@@ -46,6 +46,7 @@ export class Gateway implements IGateway {
     private activityCallbacks = new Map<string, ActivityCallback>();
     private channelConfigs: Record<string, ChannelConfig> = {};
     private nodeManager: NodeManager;
+    private waConnected = false;
 
     constructor(private config: GatewayConfig) {
         this.sessions = new SessionStore(config.dataDir);
@@ -182,12 +183,14 @@ export class Gateway implements IGateway {
                     }
                     // Mirror to WhatsApp
                     else {
-                        const ownerJid = this.getOwnerJid();
-                        if (ownerJid) {
-                            console.log(`[gateway-mirror] Agent typing on WebChat -> Mirroring to WhatsApp (${ownerJid})`);
-                            const whatsappHandler = this.activityCallbacks.get('whatsapp');
-                            if (whatsappHandler) {
-                                await whatsappHandler(ownerJid, 'typing');
+                        if (this.waConnected) {
+                            const ownerJid = this.getOwnerJid();
+                            if (ownerJid) {
+                                console.log(`[gateway-mirror] Agent typing on WebChat -> Mirroring to WhatsApp (${ownerJid})`);
+                                const whatsappHandler = this.activityCallbacks.get('whatsapp');
+                                if (whatsappHandler) {
+                                    await whatsappHandler(ownerJid, 'typing').catch(() => { });
+                                }
                             }
                         }
                     }
@@ -610,12 +613,14 @@ export class Gateway implements IGateway {
         if (isOwner) {
             if (channel === 'webchat') {
                 // User spoke on WebChat -> Mirror to WhatsApp as a "Note to self"
-                const ownerJid = this.getOwnerJid();
-                if (ownerJid) {
-                    console.log(`[gateway-mirror] WebChat activity -> Mirroring to WhatsApp (${ownerJid})`);
-                    await this.send('whatsapp', ownerJid, text);
+                if (this.waConnected) {
+                    const ownerJid = this.getOwnerJid();
+                    if (ownerJid) {
+                        console.log(`[gateway-mirror] WebChat activity -> Mirroring to WhatsApp (${ownerJid})`);
+                        await this.send('whatsapp', ownerJid, text).catch(() => { });
+                    }
                 } else {
-                    console.log(`[gateway-mirror] Skipping WebChat -> WhatsApp mirror: No owner JID found`);
+                    console.log(`[gateway-mirror] Skipping WebChat -> WhatsApp mirror: WhatsApp not connected`);
                 }
             } else if (channel === 'whatsapp') {
                 // User spoke on WhatsApp (Note to self) -> Mirror to all WebChat clients
@@ -662,9 +667,9 @@ export class Gateway implements IGateway {
                 if (this.isOwner(channel, peerId, metadata)) {
                     if (channel === 'whatsapp') {
                         await this.broadcastToWebChat({ type: 'message', from: 'assistant', text });
-                    } else if (channel === 'webchat') {
+                    } else if (channel === 'webchat' && this.waConnected) {
                         const ownerJid = this.getOwnerJid();
-                        if (ownerJid) await this.send('whatsapp', ownerJid, text);
+                        if (ownerJid) await this.send('whatsapp', ownerJid, text).catch(() => { });
                     }
                 }
             };
@@ -693,10 +698,10 @@ export class Gateway implements IGateway {
                     if (channel === 'whatsapp') {
                         // Mirror WhatsApp files to WebChat
                         await this.sendFile('webchat', '__BROADCAST__', att);
-                    } else if (channel === 'webchat') {
+                    } else if (channel === 'webchat' && this.waConnected) {
                         // Mirror WebChat files to WhatsApp
                         const ownerJid = this.getOwnerJid();
-                        if (ownerJid) await this.sendFile('whatsapp', ownerJid, att);
+                        if (ownerJid) await this.sendFile('whatsapp', ownerJid, att).catch(() => { });
                     }
                 }
             }
@@ -704,11 +709,11 @@ export class Gateway implements IGateway {
 
         // Mirroring Agent Response: If we replied to the owner, notify the other channel too
         if (this.isOwner(channel, peerId, metadata) && !response.streamed) {
-            if (channel === 'webchat') {
+            if (channel === 'webchat' && this.waConnected) {
                 const ownerJid = this.getOwnerJid();
                 if (ownerJid) {
                     console.log(`[gateway-mirror] Agent replied to WebChat -> Syncing to WhatsApp`);
-                    await this.send('whatsapp', ownerJid, response.text);
+                    await this.send('whatsapp', ownerJid, response.text).catch(() => { });
                 }
             } else if (channel === 'whatsapp') {
                 console.log(`[gateway-mirror] Agent replied to WhatsApp -> Syncing to WebChat`);
@@ -774,6 +779,12 @@ export class Gateway implements IGateway {
         const session = this.sessions.findByChannelAndPeer(channel, peerId);
         if (!session) return [];
         return this.transcripts.load(session.id);
+    }
+
+    /** Called by server.ts when WhatsApp connection state changes */
+    setWhatsAppConnected(connected: boolean): void {
+        this.waConnected = connected;
+        console.log(`[gateway] WhatsApp mirror: ${connected ? 'ENABLED' : 'DISABLED'}`);
     }
 
     // ── Agent Management ───────────────────────────────────────────────────────

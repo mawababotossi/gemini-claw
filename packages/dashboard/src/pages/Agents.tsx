@@ -80,6 +80,32 @@ function EmptyState({ icon, title, description }: { icon: React.ReactNode; title
     );
 }
 
+// ─── ACP Providers (static — these are CLI binaries, not API providers) ──────
+
+const ACP_PROVIDERS = [
+    {
+        id: 'gemini',
+        label: 'Gemini CLI',
+        hint: 'gemini --experimental-acp',
+        defaultAuthType: 'gemini-api-key',
+        authTypes: ['gemini-api-key', 'oauth-personal', 'vertex-ai'],
+    },
+    {
+        id: 'claude-code',
+        label: 'Claude Code',
+        hint: 'claude --acp',
+        defaultAuthType: 'claude-api-key',
+        authTypes: ['claude-api-key'],
+    },
+    {
+        id: 'codex',
+        label: 'Codex CLI',
+        hint: 'codex --acp',
+        defaultAuthType: 'openai-api-key',
+        authTypes: ['openai-api-key'],
+    },
+];
+
 // ─── Tab: Overview ──────────────────────────────────────────────────────────
 
 function OverviewTab({
@@ -92,9 +118,13 @@ function OverviewTab({
     isCreating: boolean;
     onSave: (e: React.FormEvent) => void;
 }) {
-    const selectedProvider = providers.find(p => p.id === (formData.provider || 'gemini'));
-    const availableModels = selectedProvider?.models || models;
-    const availableAuthTypes = selectedProvider?.authType || ['oauth-personal', 'gemini-api-key', 'vertex-ai'];
+    const acpProvider = ACP_PROVIDERS.find(p => p.id === (formData.provider || 'gemini')) ?? ACP_PROVIDERS[0];
+    // Filter models from API providers matching the selected ACP provider type
+    // e.g. gemini → google provider models, claude-code → anthropic models
+    const providerTypeMap: Record<string, string> = { gemini: 'google', 'claude-code': 'anthropic', codex: 'openai' };
+    const matchingApiProvider = providers.find(p => p.type === providerTypeMap[acpProvider.id]);
+    const availableModels = matchingApiProvider?.models?.length ? matchingApiProvider.models : models;
+    const availableAuthTypes = acpProvider.authTypes;
 
     const togglePermission = (id: string) => {
         const current = formData.allowedPermissions ?? [];
@@ -120,23 +150,26 @@ function OverviewTab({
                         disabled={!isCreating}
                     />
                 </FormField>
-                <FormField label="Provider" hint="AI Platform / Binary context">
+                <FormField label="Agentic Coding Provider" hint={acpProvider.hint}>
                     <select
                         className="form-select"
                         value={formData.provider || 'gemini'}
                         onChange={e => {
                             const pId = e.target.value;
-                            const p = providers.find(prov => prov.id === pId);
+                            const acp = ACP_PROVIDERS.find(p => p.id === pId) ?? ACP_PROVIDERS[0];
+                            // Pick models from the matching API provider
+                            const pTypeMap: Record<string, string> = { gemini: 'google', 'claude-code': 'anthropic', codex: 'openai' };
+                            const matchingApi = providers.find(p => p.type === pTypeMap[pId]);
                             setFormData({
                                 ...formData,
                                 provider: pId,
-                                model: p?.models?.[0] || formData.model,
-                                authType: p?.authType?.[0] || formData.authType
+                                model: matchingApi?.models?.[0] || '',
+                                authType: acp.defaultAuthType as any,
                             });
                         }}
                     >
-                        {providers.map(p => (
-                            <option key={p.id} value={p.id}>{p.name} ({p.type})</option>
+                        {ACP_PROVIDERS.map(p => (
+                            <option key={p.id} value={p.id}>{p.label}</option>
                         ))}
                     </select>
                 </FormField>
@@ -284,6 +317,76 @@ function OverviewTab({
                         </label>
                     );
                 })}
+            </div>
+
+            {/* MCP Servers */}
+            <SectionTitle>MCP Servers</SectionTitle>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                {(formData.mcpServers ?? []).map((srv: any, i: number) => (
+                    <div key={i} style={{
+                        display: 'grid', gridTemplateColumns: '1fr 90px 1fr auto', gap: '0.5rem',
+                        alignItems: 'center',
+                        padding: '0.6rem 0.75rem',
+                        borderRadius: 'var(--radius-md)',
+                        background: 'var(--bg-card)',
+                        border: '1px solid var(--border)',
+                    }}>
+                        <input
+                            className="form-input"
+                            placeholder="name"
+                            value={srv.name ?? ''}
+                            onChange={e => {
+                                const servers = [...(formData.mcpServers ?? [])];
+                                servers[i] = { ...servers[i], name: e.target.value };
+                                setFormData({ ...formData, mcpServers: servers });
+                            }}
+                        />
+                        <select
+                            className="form-select"
+                            value={srv.type ?? 'sse'}
+                            onChange={e => {
+                                const servers = [...(formData.mcpServers ?? [])];
+                                servers[i] = { ...servers[i], type: e.target.value };
+                                setFormData({ ...formData, mcpServers: servers });
+                            }}
+                        >
+                            <option value="sse">SSE</option>
+                            <option value="stdio">stdio</option>
+                        </select>
+                        <input
+                            className="form-input"
+                            placeholder="URL or command"
+                            value={srv.url ?? ''}
+                            onChange={e => {
+                                const servers = [...(formData.mcpServers ?? [])];
+                                servers[i] = { ...servers[i], url: e.target.value };
+                                setFormData({ ...formData, mcpServers: servers });
+                            }}
+                        />
+                        <button
+                            type="button"
+                            className="btn-icon text-danger"
+                            onClick={() => {
+                                const servers = (formData.mcpServers ?? []).filter((_: any, j: number) => j !== i);
+                                setFormData({ ...formData, mcpServers: servers });
+                            }}
+                            title="Remove"
+                        >
+                            <Trash2 size={15} />
+                        </button>
+                    </div>
+                ))}
+                <button
+                    type="button"
+                    className="btn btn-outline btn-sm"
+                    style={{ alignSelf: 'flex-start', marginTop: '0.25rem' }}
+                    onClick={() => {
+                        const servers = [...(formData.mcpServers ?? []), { name: '', type: 'sse', url: '', headers: [] }];
+                        setFormData({ ...formData, mcpServers: servers });
+                    }}
+                >
+                    <Plus size={13} /> Add MCP Server
+                </button>
             </div>
         </form>
     );
