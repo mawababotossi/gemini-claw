@@ -92,7 +92,7 @@
                 "markdown-to-pdf",
                 "clawhub"
             ],
-            "baseDir": "/media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/clawGate/data/agents/main",
+            "baseDir": "./agents/main",
             "provider": "gemini",
             "authType": "oauth-personal"
         },
@@ -118,7 +118,7 @@
                 "shell"
             ],
             "status": "Healthy",
-            "baseDir": "/media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/clawGate/data/agents/scipro"
+            "baseDir": "./agents/scipro"
         },
         {
             "name": "viral-writer",
@@ -140,7 +140,7 @@
                 "shell"
             ],
             "status": "Healthy",
-            "baseDir": "/media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/clawGate/data/agents/viral-writer"
+            "baseDir": "./agents/viral-writer"
         }
     ],
     "channels": {

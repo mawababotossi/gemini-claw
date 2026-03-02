@@ -23,7 +23,9 @@ export function loadConfig(configPath: string): GatewayConfig {
     const parsed = JSON.parse(expanded) as any;
 
     const configDir = path.dirname(absPath);
-    const dataDir = process.env['DATA_DIR'] ?? path.resolve(configDir, '../data');
+    const dataDir = process.env['DATA_DIR']
+        ? path.resolve(configDir, process.env['DATA_DIR'])
+        : path.resolve(configDir, '../data');
 
     return {
         project: parsed.project ?? { name: 'ClawGate' },

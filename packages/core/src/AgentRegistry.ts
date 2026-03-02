@@ -35,6 +35,9 @@ export class AgentRegistry {
         // Auto-initialize baseDir if not provided
         if (!config.baseDir) {
             config.baseDir = path.join(this.baseDataDir, 'agents', config.name);
+        } else if (!path.isAbsolute(config.baseDir)) {
+            // Resolve relative paths against baseDataDir
+            config.baseDir = path.resolve(this.baseDataDir, config.baseDir);
         }
 
         assertWithinBaseDir(this.baseDataDir, config.baseDir);
