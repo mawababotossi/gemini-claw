@@ -2,8 +2,7 @@
  * @license Apache-2.0
  * @geminiclaw/channel-slack — SlackAdapter
  */
-import bolt from '@slack/bolt';
-const { App } = bolt;
+import { App } from '@slack/bolt';
 import type { IGateway } from '@geminiclaw/core';
 import type { Attachment, OutboundAttachment } from '@geminiclaw/memory';
 
@@ -19,7 +18,7 @@ export interface SlackAdapterOptions {
 }
 
 export class SlackAdapter {
-    private app: bolt.App;
+    private app: App;
 
     constructor(options: SlackAdapterOptions) {
         this.app = new App({

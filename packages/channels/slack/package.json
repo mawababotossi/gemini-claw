@@ -3,6 +3,7 @@
     "version": "0.1.0",
     "type": "module",
     "main": "dist/index.js",
+    "types": "dist/index.d.ts",
     "scripts": {
         "build": "tsc",
         "dev": "tsc -w"
@@ -13,6 +14,12 @@
     "peerDependencies": {
         "@geminiclaw/core": "workspace:*",
         "@geminiclaw/memory": "workspace:*"
+    },
+    "devDependencies": {
+        "@geminiclaw/core": "workspace:*",
+        "@geminiclaw/memory": "workspace:*",
+        "@types/node": "^22.0.0",
+        "typescript": "^5.5.0"
     },
     "license": "Apache-2.0"
 }
