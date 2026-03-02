@@ -46,28 +46,38 @@ The `--experimental-acp` mode is the **same protocol** used by Zed, Emacs, and o
 
 ---
 
-## What is GeminiClaw?
+## 1. Overview
 
-GeminiClaw is an **agent supervision platform** built on top of the official Google `gemini-cli`. It wraps the CLI's experimental **ACP (Agent Communication Protocol)** to expose Gemini 3 models as persistent, autonomous agents — reachable through Telegram, WhatsApp, a web chat, or your own channel.
+**GeminiClaw** is an open-source **agent supervision framework** built around the experimental **ACP (Agent Communication Protocol)** of `gemini-cli`. It exposes Gemini models as persistent autonomous agents equipped with:
 
-> Think of it as a flight controller for gemini-cli: you write the mission, GeminiClaw keeps the agent airborne, routes incoming traffic, persists memory, and exposes your tools via MCP — all without unofficial auth hacks.
-
-### Why not just use the Gemini API directly?
-
-The Gemini API gives you a model endpoint. GeminiClaw gives you **an agent**:
-
-| | Gemini API | GeminiClaw |
-|---|---|---|
-| Persistent memory across sessions | ❌ | ✅ JSONL transcripts + long-term MEMORY.md |
-| Visible chain-of-thought | ❌ | ✅ Native `thought_chunk` stream |
-| Autonomous ReAct loops with tools | Manual | ✅ Built-in via MCP skills |
-| Multi-channel routing (Telegram, WhatsApp…) | ❌ | ✅ Pluggable adapters |
-| Google account safety | ⚠️ Risk with OAuth scraping | ✅ Official ACP binary |
-| Admin dashboard | ❌ | ✅ React dashboard with live logs |
+- **Long-term memory** (JSONL transcripts + `MEMORY.md` file)
+- **Visible reasoning** (native `thought_chunk` stream)
+- **Autonomous ReAct loops** via custom MCP tools
+- **Multi-channel routing** (Telegram, WhatsApp, WebChat, Discord, Slack)
+- **React Admin Dashboard**
 
 ---
 
-## Architecture at a Glance
+## 2. Why GeminiClaw?
+
+### The Problem: Subscription OAuth Risk
+In early 2025, many AI framework users faced account suspensions for using "scraping" or "OAuth token injection" methods to access frontier models. These methods violate the implicit contract of flat-rate pricing.
+
+### The Answer: Official ACP Integration
+GeminiClaw drives the **official `gemini-cli` binary directly** through its own supported integration protocol: `--experimental-acp`. This is the same protocol used by official IDE integrations like Zed. Your Google account authenticates the CLI once, and GeminiClaw never touches your OAuth tokens.
+
+| Feature | Gemini API | GeminiClaw |
+|---|---|---|
+| Persistent memory across sessions | ❌ | ✅ JSONL + `MEMORY.md` |
+| Visible Chain-of-Thought | ❌ | ✅ Native `thought_chunk` stream |
+| Autonomous ReAct loops with tools | Manual | ✅ Built-in via MCP |
+| Multi-channel routing | ❌ | ✅ Pluggable adapters |
+| Google Account Safety | ⚠️ OAuth Risk | ✅ Official ACP binary |
+| Admin Dashboard | ❌ | ✅ React UI with live logs |
+
+---
+
+## 3. Architecture
 
 ```
                     ┌──────────────────────────────────────────┐
@@ -75,14 +85,14 @@ The Gemini API gives you a model endpoint. GeminiClaw gives you **an agent**:
   Telegram ─────────┤                                          │
   WhatsApp ─────────┤  MessageQueue (FIFO per session)         │
   WebChat  ─────────┤       │                                  │
-  Internal ─────────┤       ▼                                  │
-                    │  AgentRuntime ◄──── SessionMap            │
-                    │       │                                  │
+  Discord  ─────────┤       ▼                                  │
+  Slack    ─────────┤  AgentRuntime ◄──── SessionMap           │
+  Internal ─────────┤       │                                  │
                     │       ▼                                  │
-                    │   ACPBridge  ──── gemini --experimental  │
-                    │       │            -acp (subprocess)     │
+                    │   ACPBridge ──── gemini --experimental   │
+                    │       │           -acp (subprocess)      │
                     │       ▼                                  │
-                    │  SkillMcpServer  (your JS tools as MCP)  │
+                    │  SkillMcpServer (JS tools via MCP)       │
                     │       │                                  │
                     │  TranscriptStore (JSONL + MEMORY.md)     │
                     └──────────────────────────────────────────┘
@@ -90,43 +100,71 @@ The Gemini API gives you a model endpoint. GeminiClaw gives you **an agent**:
                               React Dashboard (port 5173)
 ```
 
+### Key Components
+
+| Component | Role |
+|---|---|
+| **Gateway** | Central WebSocket hub. Receives messages from all channels, routes them to the correct agent. |
+| **AgentRuntime** | Manages agent lifecycle: sessions, heartbeats, queues, and GC of inactive bridges. |
+| **ACPBridge** | Subprocess supervisor for `gemini --experimental-acp`. Handles JSON-RPC stdin/stdout streaming. |
+| **MessageQueue** | Per-session FIFO queue to prevent context corruption during simultaneous messages. |
+| **SkillMcpServer** | HTTP/SSE MCP server exposing registered JS skills to the agent. |
+| **TranscriptStore** | Persistence of conversations in JSONL format + `MEMORY.md` for long-term memory. |
+| **Dashboard** | React-based UI (port 5173) to manage agents, sessions, logs, skills, and channels. |
+
+---
+
+## 4. Project Structure
+
 ```
 geminiclaw/
 ├── packages/
-│   ├── core/          @geminiclaw/core       ← ACP supervisor & AgentRuntime
-│   ├── gateway/       @geminiclaw/gateway    ← WebSocket hub, routing, session queue
-│   ├── memory/        @geminiclaw/memory     ← JSONL transcripts + SQLite sessions
-│   ├── skills/        @geminiclaw/skills     ← MCP skill registry (your custom tools)
+│   ├── core/           @geminiclaw/core       ← Runtime, ACP Bridge, Failover
+│   ├── gateway/        @geminiclaw/gateway    ← Main router, ingest(), sessions, Nodes
+│   ├── memory/         @geminiclaw/memory     ← JSONL read/write
+│   ├── skills/         @geminiclaw/skills     ← MCP Server & Registry
 │   ├── channels/
-│   │   ├── telegram/  @geminiclaw/channel-telegram
-│   │   ├── whatsapp/  @geminiclaw/channel-whatsapp
-│   │   └── webchat/   @geminiclaw/channel-webchat
-│   └── dashboard/     @geminiclaw/dashboard  ← React admin UI
+│   │   ├── telegram/   @geminiclaw/channel-telegram
+│   │   ├── whatsapp/   @geminiclaw/channel-whatsapp
+│   │   ├── webchat/    @geminiclaw/channel-webchat
+│   │   ├── discord/    @geminiclaw/channel-discord
+│   │   └── slack/      @geminiclaw/channel-slack
+│   └── dashboard/      @geminiclaw/dashboard  ← React Admin UI
 ├── config/
-│   └── geminiclaw.json                       ← Agents, channels, model config
-└── docker-compose.yml
+│   └── geminiclaw.json          ← Main configuration
+├── data/                        ← Transcripts, sessions, MEMORY.md
+├── docker-compose.yml
+└── scripts/
+    └── install.sh
 ```
 
 ---
 
-## Prerequisites
+## 5. Prerequisites
 
-- **Node.js ≥ 20** and **pnpm ≥ 9**
-- The official [Gemini CLI](https://github.com/google-gemini/gemini-cli) installed globally and authenticated:
+- **Node.js ≥ 20**
+- **pnpm ≥ 9**
+- **Gemini CLI** installed globally and authenticated:
 
 ```bash
 npm install -g @google/gemini-cli
-gemini auth          # complete Google authentication once
-gemini --version     # verify the CLI works
+gemini auth          # perform one-time Google authentication
+gemini --version     # verification
 ```
 
-> GeminiClaw launches `gemini --experimental-acp` as a supervised subprocess. It requires the CLI to be authenticated beforehand — no additional API keys needed for the base setup.
+> GeminiClaw launches `gemini --experimental-acp` as a supervised subprocess. Authentication via `gemini auth` is mandatory — no extra API keys are required for the base setup.
 
 ---
 
-## Quick Start
+## 6. Installation
 
-### 1. Clone & install
+### Via Installation Script
+
+```bash
+curl -fsSL https://geminiclaw.ai/install.sh | bash
+```
+
+### Manual Installation
 
 ```bash
 git clone https://github.com/mawababotossi/geminiclaw.git
@@ -135,13 +173,19 @@ pnpm install
 pnpm build
 ```
 
-### 2. Configure your first agent
+---
+
+## 7. Quick Start
+
+### Step 1 — Copy Example Config
 
 ```bash
 cp config/geminiclaw.example.json config/geminiclaw.json
 ```
 
-Edit `config/geminiclaw.json` — the minimum working configuration:
+### Step 2 — Minimum Configuration
+
+Edit `config/geminiclaw.json`:
 
 ```json
 {
@@ -158,97 +202,59 @@ Edit `config/geminiclaw.json` — the minimum working configuration:
 }
 ```
 
-### 3. Start
+### Step 3 — Start
 
 ```bash
 pnpm start
 ```
 
-Or with the CLI helper:
+Or using the CLI:
 
 ```bash
-geminiclaw start          # starts gateway + dashboard in background
-geminiclaw stop           # graceful shutdown
-geminiclaw status         # show running agents and channel connections
+geminiclaw start      # starts gateway + dashboard in background
+geminiclaw stop       # clean shutdown
+geminiclaw status     # show agents and connection status
+geminiclaw onboard    # guided configuration wizard
 ```
 
-Open the dashboard at **http://localhost:5173** — your agent is live.
+**Dashboard available at: http://localhost:5173**
 
 ---
 
-## Docker
+## 8. Configuration Reference
 
-```bash
-# Start everything (gateway + dashboard)
-docker-compose up -d
-
-# Tail logs
-docker-compose logs -f gateway
-
-# Stop
-docker-compose down
-```
-
-The `./data` volume is mounted for persistent transcripts and memory.
-
----
-
-## Configuration Reference
-
-### Agent options (`geminiclaw.json`)
-
-```json
-{
-  "agents": [
-    {
-      "name": "main",
-      "model": "gemini-2.5-pro-preview",
-      "description": "General purpose assistant",
-      "systemPrompt": "./agents/main/SYSTEM.md",
-      "allowedPermissions": [
-        "read_file",
-        "write_file",
-        "run_shell_command",
-        "web_fetch"
-      ],
-      "mcpServers": [
-        { "name": "skills", "url": "http://localhost:3002/mcp" }
-      ],
-      "fallbackModels": ["gemini-2.0-flash"],
-      "heartbeat": {
-        "enabled": true,
-        "cron": "0 8 * * *",
-        "deliveryChannel": "telegram"
-      }
-    }
-  ]
-}
-```
+### Agent Configuration (`geminiclaw.json`)
 
 | Field | Type | Description |
 |---|---|---|
-| `name` | string | Unique agent identifier, used for routing |
-| `model` | string | Primary Gemini model to use |
-| `systemPrompt` | string (path) | Path to a Markdown system prompt file |
-| `allowedPermissions` | string[] | Tool calls the agent is allowed to execute without asking |
-| `mcpServers` | array | External MCP servers to mount (your custom tools) |
-| `fallbackModels` | string[] | Ordered list of models to try if the primary fails |
-| `heartbeat` | object | Scheduled proactive wakeups (cron expression) |
+| `name` | `string` | Unique agent identifier (used for routing) |
+| `model` | `string` | Primary Gemini model (e.g., `gemini-2.5-pro-preview`) |
+| `fallbackModels` | `string[]` | Ordered list of fallback models if the primary fails |
+| `authType` | `string` | Auth type: `oauth-personal`, `gemini-api-key`, `vertex-ai` |
+| `apiKey` | `string` | API Key (if `authType = gemini-api-key`). Supports `${ENV_VAR}` |
+| `systemPrompt` | `string` | Path to a Markdown system prompt file |
+| `allowedPermissions` | `string[]` | Auto-approved tools without confirmation prompts |
+| `mcpServers` | `array` | External MCP servers to mount |
+| `baseDir` | `string` | Base directory for `MEMORY.md`, `SOUL.md`, and workspace |
+| `heartbeat` | `object` | Scheduled proactive wakeups (cron expression) |
+| `skills` | `string[]` | Active prompt-driven skills (based on `SKILL.md`) |
 
-### Channel configuration
+### Channel Configuration
 
 ```json
 {
   "channels": {
     "telegram": {
-      "token": "YOUR_BOT_TOKEN",
-      "ownerChatId": "12345678"
+      "enabled": true,
+      "token": "${TELEGRAM_BOT_TOKEN}",
+      "allowedUserIds": [12345678]
     },
     "whatsapp": {
       "enabled": true,
-      "ownerJid": "33612345678@s.whatsapp.net"
+      "phoneNumber": "+33612345678"
     },
     "webchat": {
+      "enabled": true,
       "port": 3001
     }
   }
@@ -257,140 +263,78 @@ The `./data` volume is mounted for persistent transcripts and memory.
 
 ---
 
-## Writing Custom Skills (MCP Tools)
+## 9. Communication Channels
 
-Skills are JavaScript functions exposed as MCP tools. The Gemini agent can call them autonomously during a ReAct loop.
+| Channel | Package | Prerequisites |
+|---|---|---|
+| **Telegram** | `@geminiclaw/channel-telegram` | Bot Token from BotFather |
+| **WhatsApp** | `@geminiclaw/channel-whatsapp` | QR Scan via Baileys (first time) |
+| **WebChat** | `@geminiclaw/channel-webchat` | None |
+| **Discord** | `@geminiclaw/channel-discord` | Discord Bot Token |
+| **Slack** | `@geminiclaw/channel-slack` | Signing Secret + App Token |
 
-Create a file in `packages/skills/src/skills/`:
-
-```typescript
-// packages/skills/src/skills/myTool.ts
-import type { Skill } from '../types.js';
-import { Type } from '@google/genai';
-
-export const myTool: Skill = {
-  name: 'fetch_weather',
-  description: 'Get the current weather for a city.',
-  parameters: {
-    type: Type.OBJECT,
-    properties: {
-      city: { type: Type.STRING, description: 'City name' },
-    },
-    required: ['city'],
-  },
-  execute: async (args) => {
-    const response = await fetch(`https://wttr.in/${args.city}?format=j1`);
-    const data = await response.json();
-    return { temp: data.current_condition[0].temp_C + '°C' };
-  },
-};
-```
-
-Register it in the skill registry — it will be automatically available to all agents that include the MCP server URL in their config.
+### Cross-Channel Mirroring
+Owner messages and agent responses can be synchronized between channels (e.g., WebChat ↔ WhatsApp), allowing you to follow the conversation anywhere.
 
 ---
 
-## Understanding the Thought Stream
+## 10. Skill System (MCP Tools)
 
-GeminiClaw natively captures the `agent_thought_chunk` stream from the ACP protocol, separate from the actual response text. This means you can see the model's full reasoning chain in the dashboard **without it polluting the user-facing reply**.
+Skills are JavaScript functions exposed as MCP tools. The Gemini agent calls them autonomously during a ReAct loop.
 
-```
-ACP stream:
-  → agent_thought_chunk: "I need to check today's exchange rate..."
-  → agent_thought_chunk: "Let me call fetch_url with USD/EUR..."
-  → agent_message_chunk: "Le taux de change actuel est 1€ = 1.07$."
+### Integrated System Skills
 
-Dashboard shows:
-  [💭 Thinking - 84 tokens] ← collapsible
-  "Le taux de change actuel est 1€ = 1.07$."
-```
+The Gateway automatically provides these core skills:
 
-The thought is also persisted in the JSONL transcript with the `thought` field, so it's visible when reviewing conversation history.
+| Skill | Description |
+|---|---|
+| `read_memory_file` / `update_memory_file` | Manage long-term agent memory |
+| `delegate_task` | Hand off tasks to another specialized agent |
+| `schedule_task` / `list_tasks` | Manage scheduled recurring jobs |
+| `list_agents` | Discover other agents in the system |
 
 ---
 
-## Dashboard Features
+## 11. Memory & Transcripts
 
-The React dashboard (port 5173) gives you full visibility into your agent infrastructure:
+### TranscriptStore (JSONL)
+Conversations are persisted in `data/` as JSONL files. Each line represents a `ChatMessage` with roles, content, and optional `thought` data.
 
-- **Overview** — gateway health, WebSocket status, instance/session/cron counts
-- **Agents** — per-agent config, files, tools, skills, and active sessions
-- **Sessions** — full conversation history with token usage, thinking indicators
-- **Skills** — enable/disable tools, inject API keys per-skill
-- **Channels** — connection status for Telegram, WhatsApp, WebChat
-- **Logs** — live log tail with level filtering (Trace → Fatal) and export
-- **Settings** — model selection, provider keys, system config
-
----
-
-## How It Works (Technical)
-
-1. A user sends a message on any channel (Telegram, WhatsApp, WebChat).
-2. The **Gateway** identifies the session and routes to the assigned `AgentRuntime`.
-3. Messages are queued per-session in a FIFO `MessageQueue` to prevent context corruption.
-4. The `AgentRuntime` prepares the prompt (injecting system instructions on new sessions) and delegates to `ACPBridge`.
-5. `ACPBridge` writes a JSON-RPC prompt to `gemini --experimental-acp`'s stdin and reads streaming response chunks.
-6. `agent_thought_chunk` events are accumulated separately from `agent_message_chunk` events.
-7. If the model calls a tool (MCP), `ACPBridge` intercepts the permission request and auto-approves based on `allowedPermissions`.
-8. The final response and thought are persisted to the JSONL `TranscriptStore` and returned to the channel.
-9. **Mirroring**: if configured, the owner's messages are synced across channels (e.g., WebChat ↔ WhatsApp).
+### Agent Context Files
+Agents load contextual files from their `baseDir`:
+- `SOUL.md`: Personality and behavior instructions.
+- `USER.md`: User profile and preferences.
+- `MEMORY.md`: Long-term memory updated by the agent itself.
 
 ---
 
-## Security Notes
+## 12. React Dashboard
 
-- The `DASHBOARD_SECRET` environment variable protects the gateway HTTP API and WebSocket. Set it before production deployment.
-- `allowedPermissions` is your execution firewall — only whitelisted actions are auto-approved. Everything else is denied by default.
-- Never expose the gateway port (3000) or webchat WebSocket port (3001) directly to the internet without a reverse proxy (nginx/Caddy) and TLS.
-- WhatsApp credentials (Baileys session) are stored locally in `data/whatsapp/`. Back up this directory.
+Open **http://localhost:5173** to access the administration interface:
 
----
-
-## Troubleshooting
-
-**Agent says "ACP session not found"**
-The `gemini` subprocess crashed or timed out. Check `geminiclaw logs` for ACP errors. Restart with `geminiclaw restart`.
-
-**Thought is appearing in the response text**
-Some model variants don't correctly separate `thought_chunk` from `message_chunk`. GeminiClaw includes a heuristic cleaner (`cleanResponse`) that strips common leak patterns. If you see consistent leakage, open an issue with the model name.
-
-**WhatsApp QR code not appearing**
-Run the gateway in foreground mode (`geminiclaw start --foreground`) to see the QR in the terminal on first auth.
-
-**Dashboard shows "Gateway unreachable"**
-Ensure the gateway is running (`geminiclaw status`) and `VITE_GATEWAY_URL` in the dashboard `.env` matches the gateway address.
+- **Overview**: System health, WebSocket status, and metrics.
+- **Agents**: Configuration, file editor, and active session management.
+- **Sessions**: Complete chat history with visible reasoning chains.
+- **Skills**: Skill management and API key configuration.
+- **Logs**: Live log tail with levels and export functionality.
 
 ---
 
-## Project Status
+## 13. Security
 
-GeminiClaw is under active development. The core gateway, ACP bridge, and multi-channel routing are production-tested. The following are in progress:
-
-- [ ] Usage page (token/cost analytics per agent and channel)
-- [ ] Instances page (live WebSocket presence map)
-- [ ] Nodes page (per-scope execution permission editor)
-- [ ] End-to-end test suite
+- **`DASHBOARD_SECRET`**: Required environment variable to protect the API and WebSocket in production.
+- **`allowedPermissions`**: Execution firewall. Only whitelisted actions are auto-approved.
+- **`NODE_SECRET`**: Authentication for remote WebSocket Nodes (Priority 6).
+- **Network Isolation**: Always use a reverse proxy (Nginx/Caddy) with TLS for production deployments.
 
 ---
 
-## Contributing
+## 14. License
 
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feat/my-feature`
-3. Make your changes and add tests
-4. Run `pnpm test` and `pnpm build`
-5. Open a pull request
-
-All packages use TypeScript strict mode. Keep changes scoped to a single package where possible.
-
----
-
-## License
-
-[Apache-2.0](LICENSE) — free to use, modify, and distribute. Attribution appreciated.
+[Apache-2.0](LICENSE) — free to use, modify, and distribute.
 
 ---
 
 <div align="center">
-  <sub>Built on top of <a href="https://github.com/google-gemini/gemini-cli">google/gemini-cli</a> · Inspired by OpenClaw · Not affiliated with Google</sub>
+  <sub>Built on top of <a href="https://github.com/google-gemini/gemini-cli">google/gemini-cli</a> · Not affiliated with Google</sub>
 </div>
