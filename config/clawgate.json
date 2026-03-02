@@ -64,7 +64,6 @@
                 "run_code",
                 "getCurrentTime"
             ],
-            "baseDir": "../../data/agents/main",
             "status": "Healthy",
             "skills": [
                 "nano-pdf",
@@ -95,7 +94,6 @@
                 "google_web_search",
                 "shell"
             ],
-            "baseDir": "../../data/agents/scipro",
             "status": "Healthy"
         },
         {
@@ -117,7 +115,6 @@
                 "google_web_search",
                 "shell"
             ],
-            "baseDir": "../../data/agents/viral-writer",
             "status": "Healthy"
         }
     ],

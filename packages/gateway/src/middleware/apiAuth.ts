@@ -30,6 +30,8 @@ export function requireApiToken(req: Request, res: Response, next: NextFunction)
         providedToken = authHeader.slice(7);
     } else if (req.cookies && req.cookies['gc_session']) {
         providedToken = req.cookies['gc_session'];
+    } else if (req.method === 'GET' && req.query['token']) {
+        providedToken = req.query['token'] as string;
     }
 
     if (!providedToken) {

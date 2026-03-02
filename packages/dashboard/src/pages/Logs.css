@@ -1,8 +1,9 @@
 .logs-page {
     display: flex;
     flex-direction: column;
-    height: calc(100vh - 64px - 4rem);
-    /* TopBar height + content padding */
+    flex: 1;
+    min-height: 0;
+    padding: 1rem 2rem 2rem 2rem;
 }
 
 .logs-viewer-panel {
@@ -11,6 +12,7 @@
     flex-direction: column;
     min-height: 0;
     overflow: hidden;
+    position: relative;
 }
 
 .logs-toolbar {
@@ -43,6 +45,7 @@
     flex-direction: column;
     min-height: 0;
     background: rgba(0, 0, 0, 0.2);
+    position: relative;
 }
 
 .logs-content {

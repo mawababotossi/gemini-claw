@@ -37,14 +37,14 @@ export function Logs() {
     });
     const [searchTerm, setSearchTerm] = useState('');
     const [autoFollow, setAutoFollow] = useState(true);
-    const [logFile] = useState<string>('/tmp/openclaw/openclaw-2026-02-28.log');
+    const [logFile] = useState<string>('Live Gateway Stream');
 
     const scrollRef = useRef<HTMLDivElement>(null);
     const logsEndRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         const secret = import.meta.env.VITE_DASHBOARD_SECRET || '';
-        const eventSource = new EventSource(`http://${window.location.hostname}:3002/api/logs/stream?token=${secret}`);
+        const eventSource = new EventSource(`/api/logs/stream?token=${secret}`);
 
         eventSource.onmessage = (event) => {
             try {
@@ -74,7 +74,7 @@ export function Logs() {
 
     useEffect(() => {
         if (autoFollow) {
-            logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+            logsEndRef.current?.scrollIntoView({ behavior: 'auto' });
         }
     }, [logs, autoFollow]);
 
@@ -224,10 +224,10 @@ export function Logs() {
                     File: <span style={{ fontFamily: 'monospace' }}>{logFile}</span>
                 </div>
 
-                <div className="logs-container">
+                <div className="logs-container" style={{ flex: 1, minHeight: 0, position: 'relative' }}>
                     <div
                         className="logs-content p-4 font-mono text-sm overflow-y-auto"
-                        style={{ flex: 1 }}
+                        style={{ height: '100%' }}
                         ref={scrollRef}
                         onScroll={handleScroll}
                     >
@@ -240,7 +240,7 @@ export function Logs() {
                                     : "No logs match your current search and filter criteria."}
                             />
                         ) : (
-                            <div className="logs-table">
+                            <div className="logs-table" style={{ display: 'flex', flexDirection: 'column' }}>
                                 {filteredLogs.map((log, idx) => {
                                     const level = log.level.toLowerCase() as LogLevel;
                                     const config = LEVEL_CONFIG[level] || LEVEL_CONFIG.info;
@@ -271,7 +271,7 @@ export function Logs() {
                                         </div>
                                     );
                                 })}
-                                <div ref={logsEndRef} />
+                                <div ref={logsEndRef} style={{ height: '1px' }} />
                             </div>
                         )}
                     </div>

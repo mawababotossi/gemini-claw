@@ -17,7 +17,7 @@ import { WebSocketServer } from 'ws';
 const logClients = new Set<Response>();
 interface LogEntry { timestamp: string; level: string; text: string; }
 const logBuffer: LogEntry[] = [];
-const MAX_BUFFER = 200;
+const MAX_BUFFER = 1000;
 
 const LOG_LEVELS: Record<string, number> = {
     'trace': 0,
@@ -171,7 +171,7 @@ async function main(): Promise<void> {
     // Rate Limiting
     const apiLimiter = rateLimit({
         windowMs: 15 * 60 * 1000, // 15 minutes
-        max: 300, // Limit each IP to 300 requests per window
+        max: 5000, // Limit each IP to 300 requests per window
         message: { error: 'Too many requests, please try again later.' },
         standardHeaders: true,
         legacyHeaders: false,
@@ -248,45 +248,50 @@ async function main(): Promise<void> {
 
     // API: System Status & Auth
     app.get('/api/status', (req, res) => {
-        let authType = 'None';
-        let accountHint = 'Not configured';
+        try {
+            let authType = 'None';
+            let accountHint = 'Not configured';
 
-        if (process.env['GOOGLE_GENAI_USE_GCA'] === 'true') {
-            authType = 'Google OAuth';
-            accountHint = 'GCA Session';
+            if (process.env['GOOGLE_GENAI_USE_GCA'] === 'true') {
+                authType = 'Google OAuth';
+                accountHint = 'GCA Session';
 
-            // Try to read the exact email from the gemini-cli configuration
-            try {
-                const credsPath = path.join(os.homedir(), '.gemini', 'google_accounts.json');
+                // Try to read the exact email from the gemini-cli configuration
+                try {
+                    const credsPath = path.join(os.homedir(), '.gemini', 'google_accounts.json');
 
-                if (fs.existsSync(credsPath)) {
-                    const credsData = JSON.parse(fs.readFileSync(credsPath, 'utf8'));
-                    if (credsData.active) {
-                        accountHint = credsData.active;
+                    if (fs.existsSync(credsPath)) {
+                        const credsData = JSON.parse(fs.readFileSync(credsPath, 'utf8'));
+                        if (credsData.active) {
+                            accountHint = credsData.active;
+                        }
                     }
+                } catch (err) {
+                    console.warn('[gateway] Could not read GCA email address:', err);
                 }
-            } catch (err) {
-                console.warn('[gateway] Could not read GCA email address:', err);
+            } else if (process.env['GEMINI_API_KEY']) {
+                authType = 'API Key';
+                const key = process.env['GEMINI_API_KEY'];
+                accountHint = key.length > 8 ? key.substring(0, 4) + '...' + key.substring(key.length - 4) : '********';
             }
-        } else if (process.env['GEMINI_API_KEY']) {
-            authType = 'API Key';
-            const key = process.env['GEMINI_API_KEY'];
-            accountHint = key.substring(0, 4) + '...' + key.substring(key.length - 4);
+
+            const stats = gateway.getOverviewStats();
+
+            res.json({
+                status: 'Healthy',
+                authType,
+                accountHint,
+                uptime: process.uptime(),
+                tickInterval: stats.tickInterval,
+                lastChannelsRefresh: Date.now(), // Placeholder for now
+                instances: stats.instances,
+                sessions: stats.sessions,
+                cron: stats.cronJobs
+            });
+        } catch (err: any) {
+            console.error('[gateway] Status API Error:', err);
+            res.status(500).json({ error: err.message });
         }
-
-        const stats = gateway.getOverviewStats();
-
-        res.json({
-            status: 'Healthy',
-            authType,
-            accountHint,
-            uptime: process.uptime(),
-            tickInterval: stats.tickInterval,
-            lastChannelsRefresh: Date.now(), // Placeholder for now
-            instances: stats.instances,
-            sessions: stats.sessions,
-            cron: stats.cronJobs
-        });
     });
 
     // API: WhatsApp Status & Actions
@@ -637,8 +642,16 @@ async function main(): Promise<void> {
         }
     });
 
+    process.on('uncaughtException', (err) => {
+        console.error('[CRITICAL] Uncaught Exception:', err);
+    });
+
+    process.on('unhandledRejection', (reason, promise) => {
+        console.error('[CRITICAL] Unhandled Rejection at:', promise, 'reason:', reason);
+    });
+
     const apiPort = config.gatewayPort ?? 3002;
-    const server = app.listen(apiPort, () => {
+    const server = app.listen(apiPort, '127.0.0.1', () => {
         console.log(`[clawgate] Admin API ready on port ${apiPort}`);
     });
 
