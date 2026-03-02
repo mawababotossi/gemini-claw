@@ -19,6 +19,16 @@ interface LogEntry { timestamp: string; level: string; text: string; }
 const logBuffer: LogEntry[] = [];
 const MAX_BUFFER = 200;
 
+const LOG_LEVELS: Record<string, number> = {
+    'trace': 0,
+    'debug': 1,
+    'info': 2,
+    'warn': 3,
+    'error': 4
+};
+
+const MIN_LOG_LEVEL = LOG_LEVELS[(process.env['LOG_LEVEL'] || 'info').toLowerCase()] ?? 2;
+
 const originalConsole = {
     log: console.log,
     warn: console.warn,
@@ -29,13 +39,19 @@ const originalConsole = {
 };
 
 function broadcastLog(level: string, ...args: any[]) {
+    const currentLevel = LOG_LEVELS[level] ?? 2;
+
+    // Always call original console
+    originalConsole[level as keyof typeof originalConsole](...args);
+
+    // Filter broadcast and buffer based on LOG_LEVEL
+    if (currentLevel < MIN_LOG_LEVEL) return;
+
     const entry: LogEntry = {
         timestamp: new Date().toISOString(),
         level,
         text: args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ')
     };
-
-    originalConsole[level as keyof typeof originalConsole](...args);
 
     logBuffer.push(entry);
     if (logBuffer.length > MAX_BUFFER) logBuffer.shift();
