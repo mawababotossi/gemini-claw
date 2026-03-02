@@ -23,6 +23,7 @@ export class ACPBridge {
     private requestId = 1;
     private pendingRequests: Map<number, { resolve: (val: any) => void; reject: (err: any) => void }> = new Map();
     private updateListeners: Map<string, (update: ACPSessionUpdate) => void> = new Map();
+    private readonly ACP_DEBUG = process.env['ACP_DEBUG'] === 'true';
 
     constructor(
         private model: string,
@@ -34,6 +35,15 @@ export class ACPBridge {
     }
 
     async start(options?: { authType?: string; apiKey?: string }): Promise<void> {
+        // ← NOUVEAU : validation de la clé API
+        if (options?.apiKey) {
+            // Les API keys Gemini suivent le pattern "AIza..." — 39 chars alphanumériques
+            const apiKeyPattern = /^[A-Za-z0-9_\-]{20,100}$/;
+            if (!apiKeyPattern.test(options.apiKey)) {
+                throw new Error('[core/acp] Invalid API key format. Refusing to start process.');
+            }
+        }
+
         let cmd = 'gemini';
         // Fallback for environments where global bin is not in PATH (like PM2)
         const fs = await import('node:fs');
@@ -67,7 +77,9 @@ export class ACPBridge {
         });
 
         rl.on('line', (line) => {
-            console.log(`[core/acp] RECV: ${line}`);
+            if (this.ACP_DEBUG) {
+                console.log(`[core/acp] RECV: ${line}`);
+            }
             try {
                 // If we see an OAuth URL, and we are waiting for an authenticate response, 
                 // it means headless auth failed/needs interaction.
@@ -188,7 +200,16 @@ export class ACPBridge {
                 params
             };
             const payload = JSON.stringify(msg) + '\n';
-            console.log(`[core/acp] SEND: ${payload.trim()}`);
+
+            // ← MODIFIER : ne pas logger les payloads d'authentification ou si debug est off
+            if (this.ACP_DEBUG) {
+                console.log(`[core/acp] SEND: ${payload.trim()}`);
+            } else if (method === 'authenticate') {
+                console.log(`[core/acp] SEND: authenticate { methodId: "${params.methodId}" } [credentials redacted]`);
+            } else {
+                console.log(`[core/acp] → ${method} #${id}`);
+            }
+
             this.geminiProcess.stdin.write(payload);
         });
     }

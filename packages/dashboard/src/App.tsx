@@ -1,12 +1,38 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { useState } from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Sidebar, TopBar } from './components';
-import { Dashboard, Agents, Skills, Sessions, WebChat, Logs, Channels, Settings, ComingSoon, CronJobs } from './pages';
+import { Dashboard, Agents, Skills, Sessions, WebChat, Logs, Channels, Settings, ComingSoon, CronJobs, Login } from './pages';
 
 function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(
+    localStorage.getItem('isAuthenticated') === 'true'
+  );
+
+  const handleLogin = () => {
+    localStorage.setItem('isAuthenticated', 'true');
+    setIsAuthenticated(true);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('isAuthenticated');
+    setIsAuthenticated(false);
+  };
+
+  if (!isAuthenticated) {
+    return (
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<Login onLogin={handleLogin} />} />
+          <Route path="*" element={<Navigate to="/login" replace />} />
+        </Routes>
+      </BrowserRouter>
+    );
+  }
+
   return (
     <BrowserRouter>
       <div className="flex" style={{ minHeight: '100vh', width: '100%' }}>
-        <Sidebar />
+        <Sidebar onLogout={handleLogout} />
         <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
           <TopBar />
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
@@ -25,6 +51,8 @@ function App() {
               <Route path="/cron" element={<CronJobs />} />
               <Route path="/nodes" element={<ComingSoon title="Nodes" description="Visualize agent and skill connectivity." />} />
               <Route path="/usage" element={<ComingSoon title="Usage" description="Track token usage and operational costs." />} />
+
+              <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </div>
         </main>

@@ -133,6 +133,24 @@
     animation: pulse 2s infinite;
 }
 
+.logout-button {
+    width: 100%;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.2s ease;
+}
+
+.logout-button:hover {
+    background: rgba(255, 81, 81, 0.05) !important;
+    color: #ff5151 !important;
+}
+
+.logout-button:hover .nav-icon {
+    color: #ff5151 !important;
+}
+
 @keyframes pulse {
     0% {
         box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4);

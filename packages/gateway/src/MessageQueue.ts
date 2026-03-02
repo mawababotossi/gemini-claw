@@ -22,7 +22,7 @@ interface QueueItem {
 export class MessageQueue {
     private queues = new Map<string, QueueItem[]>();
     private processing = new Set<string>();
-    private static MAX_QUEUE_PER_SESSION = 10;
+    private static readonly MAX_QUEUE_SIZE = 50; // ← Unified and increased limit
 
     /** Enqueue a message for a session and return a promise of the response */
     enqueue(
@@ -38,8 +38,8 @@ export class MessageQueue {
             }
             const queue = this.queues.get(sessionId)!;
 
-            if (queue.length >= MessageQueue.MAX_QUEUE_PER_SESSION) {
-                console.warn(`[gateway/queue] Queue full for session ${sessionId}. Rejecting message.`);
+            if (queue.length >= MessageQueue.MAX_QUEUE_SIZE) {
+                console.warn(`[gateway/queue] Session "${sessionId}" queue full (${MessageQueue.MAX_QUEUE_SIZE}). Message dropped.`);
                 return reject(new Error('Queue full. Please wait for the agent to finish its current tasks.'));
             }
 
@@ -73,6 +73,13 @@ export class MessageQueue {
         } finally {
             this.processing.delete(sessionId);
         }
+    }
+
+    /** Returns current queue statistics */
+    public getStats(): { sessions: number; totalPending: number } {
+        let totalPending = 0;
+        for (const q of this.queues.values()) totalPending += q.length;
+        return { sessions: this.queues.size, totalPending };
     }
 
     get size(): number {

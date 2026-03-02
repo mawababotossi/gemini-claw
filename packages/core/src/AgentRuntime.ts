@@ -34,6 +34,8 @@ export class AgentRuntime extends EventEmitter {
     private journalQueue: string[] = [];
     private journalFlushing = false;
     private cooldown = new ModelCooldownManager();
+    private systemPromptCache: string | null = null;
+    private systemPromptMtime: Map<string, number> = new Map();
 
     constructor(
         config: AgentConfig,
@@ -142,6 +144,34 @@ export class AgentRuntime extends EventEmitter {
         if (!this.config.baseDir) return '';
 
         const base = this.config.baseDir;
+        const files = [
+            { name: 'IDENTITY.md', label: 'agent_identity' },
+            { name: 'SOUL.md', label: 'agent_soul' },
+            { name: 'AGENTS.md', label: 'agent_instructions' },
+            { name: 'TOOLS.md', label: 'tools_notes' },
+            { name: 'USER.md', label: 'user_context' },
+            { name: 'MEMORY.md', label: 'agent_memory' },
+            { name: 'HEARTBEAT.md', label: 'heartbeat_instructions' }
+        ];
+
+        // ← NOUVEAU : Vérification du cache
+        let needsRefresh = !this.systemPromptCache;
+        if (!needsRefresh) {
+            for (const f of files) {
+                const filePath = path.join(base, f.name);
+                if (fs.existsSync(filePath)) {
+                    const stats = fs.statSync(filePath);
+                    if (stats.mtimeMs > (this.systemPromptMtime.get(f.name) || 0)) {
+                        needsRefresh = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (!needsRefresh && this.systemPromptCache) {
+            return this.systemPromptCache;
+        }
 
         // Identity Lockdown Header: Ensures the agent is isolated from the host system's Antigravity identity.
         // It focuses exclusively on the local workspace files and ignores any system-wide global context.
@@ -165,19 +195,11 @@ CRITICAL: You are an autonomous agent running within the GeminiClaw platform.
             p += `</peer_agents>\n`;
         }
 
-        const files = [
-            { name: 'IDENTITY.md', label: 'agent_identity' },
-            { name: 'SOUL.md', label: 'agent_soul' },
-            { name: 'AGENTS.md', label: 'agent_instructions' },
-            { name: 'TOOLS.md', label: 'tools_notes' },
-            { name: 'USER.md', label: 'user_context' },
-            { name: 'MEMORY.md', label: 'agent_memory' },
-            { name: 'HEARTBEAT.md', label: 'heartbeat_instructions' }
-        ];
-
         for (const f of files) {
             const filePath = path.join(base, f.name);
             if (fs.existsSync(filePath)) {
+                const stats = fs.statSync(filePath);
+                this.systemPromptMtime.set(f.name, stats.mtimeMs);
                 p += `\n<${f.label}>\n${fs.readFileSync(filePath, 'utf8').trim()}\n</${f.label}>\n`;
             }
         }
@@ -191,7 +213,14 @@ CRITICAL: You are an autonomous agent running within the GeminiClaw platform.
             }
         }
 
-        return p.trim();
+        this.systemPromptCache = p.trim();
+        return this.systemPromptCache;
+    }
+
+    /** Forces invalidation of the system prompt cache */
+    public invalidatePromptCache(): void {
+        this.systemPromptCache = null;
+        this.systemPromptMtime.clear();
     }
 
     /**
@@ -884,25 +913,36 @@ ${systemPrompt}
         return id;
     }
 
-    private startBridgeGC(): void {
-        this.gcInterval = setInterval(() => {
+    private startBridgeGC() {
+        this.gcInterval = setInterval(async () => {
             const now = Date.now();
-            for (const [sessionId, lastUsed] of this.bridgeLastUsed.entries()) {
-                // Don't GC internal sessions like heartbeat unless they are really old or we want to keep them
-                // Actually heartbeat runs every few minutes, so it will keep itself alive.
+            for (const [sid, lastUsed] of this.bridgeLastUsed.entries()) {
+                const bridge = this.bridges.get(sid);
+                if (!bridge) continue;
+
+                // 1. Idle cleanup
                 if (now - lastUsed > this.BRIDGE_IDLE_TTL_MS) {
-                    const bridge = this.bridges.get(sessionId);
-                    if (bridge) {
-                        console.log(`[core/runtime] Closing idle bridge for session "${sessionId}"`);
+                    console.log(`[core/runtime] Cleaning up idle bridge for session: ${sid}`);
+                    bridge.stop();
+                    this.bridges.delete(sid);
+                    this.sessionMap.delete(sid);
+                    this.bridgeLastUsed.delete(sid);
+                    this.sessionTypingThrottle.delete(sid);
+                }
+                // 2. Healthcheck for recently active bridges
+                else if (now - lastUsed < 60000) {
+                    const alive = await bridge.ping(2000);
+                    if (!alive) {
+                        console.warn(`[core/runtime] Active bridge for ${sid} is unresponsive. Killing it.`);
                         bridge.stop();
-                        this.bridges.delete(sessionId);
-                        this.sessionMap.delete(sessionId);
-                        this.bridgeLastUsed.delete(sessionId);
-                        this.sessionTypingThrottle.delete(sessionId);
+                        this.bridges.delete(sid);
+                        this.sessionMap.delete(sid);
+                        this.bridgeLastUsed.delete(sid);
+                        this.sessionTypingThrottle.delete(sid);
                     }
                 }
             }
-        }, 5 * 60 * 1000); // Check every 5 minutes
+        }, 60000); // Once per minute
     }
 
     public removeDynamicJob(id: string): boolean {

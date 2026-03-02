@@ -2,15 +2,24 @@ import axios from 'axios';
 
 const API_BASE_URL = '/api';
 
-// Use VITE_API_TOKEN for REST API authentication
-const API_TOKEN = import.meta.env.VITE_API_TOKEN || import.meta.env.VITE_DASHBOARD_SECRET || '';
+// Configure axios for cookie-based authentication
+axios.defaults.withCredentials = true;
 
-axios.interceptors.request.use((config) => {
-    if (API_TOKEN) {
-        config.headers.Authorization = `Bearer ${API_TOKEN}`;
+// Direct token usage via env is deprecated in favor of secure HttpOnly cookies.
+// We keep the interceptor only for explicit Bearer overrides if needed.
+axios.interceptors.response.use(
+    (response) => response,
+    (error) => {
+        if (error.response && (error.response.status === 401 || error.response.status === 403)) {
+            // Only clear auth if it's not the login request itself
+            if (!error.config.url.endsWith('/auth/login')) {
+                localStorage.removeItem('isAuthenticated');
+                window.location.href = '/';
+            }
+        }
+        return Promise.reject(error);
     }
-    return config;
-});
+);
 
 export interface AgentConfig {
     name: string;
@@ -94,6 +103,19 @@ export interface InstallStep {
 }
 
 export const api = {
+    async login(token: string): Promise<boolean> {
+        try {
+            const response = await axios.post(`${API_BASE_URL}/auth/login`, { token });
+            return response.data.success;
+        } catch {
+            return false;
+        }
+    },
+
+    async logout(): Promise<void> {
+        await axios.post(`${API_BASE_URL}/auth/logout`);
+    },
+
     async getStatus(): Promise<AppStatus> {
         const response = await axios.get(`${API_BASE_URL}/status`);
         return response.data;

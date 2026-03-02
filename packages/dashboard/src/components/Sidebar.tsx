@@ -10,8 +10,10 @@ import {
     MessagesSquare,
     Wifi,
     Clock,
-    Monitor
+    Monitor,
+    LogOut
 } from 'lucide-react';
+import { api } from '../services/api';
 import './Sidebar.css';
 
 export const navGroups = [
@@ -48,8 +50,13 @@ export const navGroups = [
     },
 ];
 
-export function Sidebar() {
+export function Sidebar({ onLogout }: { onLogout: () => void }) {
     const location = useLocation();
+
+    const handleLogout = async () => {
+        await api.logout();
+        onLogout();
+    };
 
     return (
         <aside className="sidebar glass-panel">
@@ -82,6 +89,13 @@ export function Sidebar() {
                     </div>
                 ))}
             </nav>
+
+            <div className="sidebar-footer">
+                <button className="nav-item logout-button" onClick={handleLogout}>
+                    <LogOut size={18} className="nav-icon" />
+                    <span>Logout</span>
+                </button>
+            </div>
         </aside>
     );
 }

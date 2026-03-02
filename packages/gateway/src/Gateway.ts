@@ -1046,7 +1046,7 @@ export class Gateway implements IGateway {
                 if (msg.role === 'assistant' && (msg as any).actionCalls) {
                     actions += (msg as any).actionCalls.length;
                 }
-                tokens += (msg.content?.length || 0) / 4; // Rough estimate
+                tokens += this.estimateTokens(msg.content);
             });
 
             return {
@@ -1186,5 +1186,13 @@ export class Gateway implements IGateway {
         // Logic to persist config change depends on implementation (git, json write, etc)
         // Here we assume registry.update or similar exists, or we just modify in-memory
         await this.updateAgent(agentName, config);
+    }
+
+    private estimateTokens(text?: string): number {
+        if (!text) return 0;
+        // Rough heuristic: mix of word count and char count for multi-language support
+        const words = text.trim().split(/\s+/).length;
+        const chars = text.length;
+        return Math.max(Math.ceil(words * 1.35), Math.ceil(chars / 3));
     }
 }

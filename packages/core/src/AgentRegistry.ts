@@ -8,6 +8,7 @@ import type { AgentConfig } from './types.js';
 import type { SkillRegistry } from '@geminiclaw/skills';
 import fs from 'node:fs';
 import path from 'node:path';
+import { validateAgentName, assertWithinBaseDir } from './utils/validation.js';
 
 export class AgentRegistry {
     private runtimes = new Map<string, AgentRuntime>();
@@ -24,6 +25,9 @@ export class AgentRegistry {
     }
 
     add(config: AgentConfig): void {
+        const safeName = validateAgentName(config.name);
+        config.name = safeName;
+
         if (this.runtimes.has(config.name)) {
             throw new Error(`Agent with name "${config.name}" already exists`);
         }
@@ -32,6 +36,8 @@ export class AgentRegistry {
         if (!config.baseDir) {
             config.baseDir = path.join(this.baseDataDir, 'agents', config.name);
         }
+
+        assertWithinBaseDir(this.baseDataDir, config.baseDir);
 
         this.ensureAgentFiles(config.baseDir);
 

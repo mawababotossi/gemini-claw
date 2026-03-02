@@ -13,18 +13,21 @@
         "test": "vitest run"
     },
     "dependencies": {
+        "@geminiclaw/channel-telegram": "workspace:*",
+        "@geminiclaw/channel-whatsapp": "workspace:*",
         "@geminiclaw/core": "workspace:*",
         "@geminiclaw/memory": "workspace:*",
         "@geminiclaw/skills": "workspace:*",
-        "@geminiclaw/channel-telegram": "workspace:*",
-        "@geminiclaw/channel-whatsapp": "workspace:*",
+        "cookie-parser": "^1.4.7",
         "dotenv": "^16.4.0",
         "express": "^4.19.0",
+        "express-rate-limit": "^8.2.1",
         "node-cron": "^3.0.3",
         "ws": "^8.18.0",
         "zod": "^3.23.8"
     },
     "devDependencies": {
+        "@types/cookie-parser": "^1.4.10",
         "@types/cors": "^2.8.19",
         "@types/express": "^4.17.21",
         "@types/node": "^22.0.0",

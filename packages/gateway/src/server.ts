@@ -147,10 +147,31 @@ async function main(): Promise<void> {
     // ── Express API for Dashboard ─────────────────────────────────────────
     const express = (await import('express')).default;
     const cors = (await import('cors')).default;
+    const cookieParser = (await import('cookie-parser')).default;
+    const { rateLimit } = await import('express-rate-limit');
+
     const app = express();
 
+    // Rate Limiting
+    const apiLimiter = rateLimit({
+        windowMs: 15 * 60 * 1000, // 15 minutes
+        max: 300, // Limit each IP to 300 requests per window
+        message: { error: 'Too many requests, please try again later.' },
+        standardHeaders: true,
+        legacyHeaders: false,
+    });
+
+    const strictLimiter = rateLimit({
+        windowMs: 60 * 60 * 1000, // 1 hour
+        max: 20, // Limit each IP to 20 auth requests per hour
+        message: { error: 'Strict rate limit exceeded. Try again in an hour.' },
+        standardHeaders: true,
+        legacyHeaders: false,
+    });
+
+    app.use(cookieParser());
     app.use(cors({
-        origin: process.env['DASHBOARD_ORIGIN'] ?? 'http://localhost:5173',
+        origin: process.env['DASHBOARD_ORIGIN'] || 'http://localhost:5173',
         credentials: true,
     }));
 
@@ -162,8 +183,42 @@ async function main(): Promise<void> {
         express.json()(req, res, next);
     });
 
+    // Public Auth Routes
+    app.post('/api/auth/login', strictLimiter, (req, res) => {
+        const { token } = req.body;
+        const expectedToken = process.env['GEMINICLAW_API_TOKEN'];
+
+        if (!expectedToken) {
+            return res.status(503).json({ error: 'Auth not configured on server' });
+        }
+
+        if (token === expectedToken) {
+            // Set HttpOnly cookie
+            res.cookie('gc_session', token, {
+                httpOnly: true,
+                secure: process.env['NODE_ENV'] === 'production',
+                sameSite: 'strict',
+                maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+            });
+            return res.json({ success: true });
+        }
+
+        res.status(401).json({ error: 'Invalid token' });
+    });
+
+    app.post('/api/auth/logout', (req, res) => {
+        res.clearCookie('gc_session');
+        res.json({ success: true });
+    });
+
     // Protect all /api routes including skills, agents, config, etc.
-    app.use('/api', requireApiToken);
+    app.use('/api', apiLimiter, (req, res, next) => {
+        // Skip auth for login/logout
+        if (req.path === '/auth/login' || req.path === '/auth/logout') {
+            return next();
+        }
+        requireApiToken(req, res, next);
+    });
 
     // Enable MCP SSE transport
 
