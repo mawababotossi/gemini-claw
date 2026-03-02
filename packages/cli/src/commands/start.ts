@@ -15,7 +15,7 @@ export const startCommand = new Command('start')
 
         // 1. Start Gateway
         const gatewayLog = fs.openSync(path.join(gatewayDir, 'gateway.log'), 'a');
-        const gateway = spawn('npx', ['tsx', 'src/server.ts'], {
+        const gateway = spawn('npx', ['tsx', '--env-file=../../.env', 'src/server.ts'], {
             cwd: gatewayDir,
             detached: true,
             stdio: ['ignore', gatewayLog, gatewayLog],
@@ -26,7 +26,7 @@ export const startCommand = new Command('start')
 
         // 2. Start Dashboard
         const dashboardLog = fs.openSync(path.join(dashboardDir, 'dashboard.log'), 'a');
-        const dashboard = spawn('pnpm', ['run', 'dev'], {
+        const dashboard = spawn('pnpm', ['run', 'dev', '--host'], {
             cwd: dashboardDir,
             detached: true,
             stdio: ['ignore', dashboardLog, dashboardLog]

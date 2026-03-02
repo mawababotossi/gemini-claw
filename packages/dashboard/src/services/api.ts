@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = `http://${window.location.hostname}:3002/api`;
+const API_BASE_URL = '/api';
 
 // Use VITE_API_TOKEN for REST API authentication
 const API_TOKEN = import.meta.env.VITE_API_TOKEN || import.meta.env.VITE_DASHBOARD_SECRET || '';

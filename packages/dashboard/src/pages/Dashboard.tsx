@@ -151,7 +151,13 @@ export function Dashboard() {
     const [connError, setConnError] = useState<string | null>(null);
 
     // Gateway Access form state
-    const [wsUrl, setWsUrl] = useState(`ws://${window.location.hostname}:3002`);
+    const [wsUrl, setWsUrl] = useState(() => {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            return `${protocol}//${window.location.hostname}:3002`;
+        }
+        return `${protocol}//${window.location.host}/ws`;
+    });
     const [token, setToken] = useState(import.meta.env.VITE_DASHBOARD_SECRET || '');
     const [sessionKey, setSessionKey] = useState('agent:main:main');
     const [language, setLanguage] = useState('English');
