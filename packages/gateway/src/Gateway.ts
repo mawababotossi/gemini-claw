@@ -782,14 +782,19 @@ export class Gateway implements IGateway {
         return this.registry.listConfigs();
     }
 
-    listAvailableModels(): string[] {
+    listAvailableModels(providerName?: string): string[] {
         const models = new Set<string>();
         for (const provider of this.config.providers) {
+            if (providerName && provider.name !== providerName) continue;
             if (provider.models) {
                 provider.models.forEach(m => models.add(m));
             }
         }
         return Array.from(models);
+    }
+
+    getProviderById(id: string): ProviderConfig | undefined {
+        return this.config.providers.find(p => p.name === id);
     }
 
     async addAgent(config: AgentConfig): Promise<void> {

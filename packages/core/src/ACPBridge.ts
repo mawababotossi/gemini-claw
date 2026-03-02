@@ -18,6 +18,47 @@ export interface ACPSessionUpdate {
 // Default timeout for standard requests (ms)
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
 
+const PROVIDER_COMMANDS: Record<string, {
+    cmd: string;
+    args: (model: string) => string[];
+    paths: string[];
+    envKey?: string;
+}> = {
+    'gemini': {
+        cmd: 'gemini',
+        args: (model) => ['--experimental-acp', '-m', model],
+        paths: [
+            '/usr/bin/gemini',
+            '/usr/local/bin/gemini',
+            '/root/.local/bin/gemini',
+            `${process.env.HOME}/.local/bin/gemini`,
+        ],
+        envKey: 'GEMINI_API_KEY',
+    },
+    'claude-code': {
+        cmd: 'claude',
+        args: (_model) => ['--acp'],
+        paths: [
+            '/usr/local/bin/claude',
+            '/usr/bin/claude',
+            `${process.env.HOME}/.npm-global/bin/claude`,
+            `${process.env.HOME}/.local/bin/claude`,
+        ],
+        envKey: 'ANTHROPIC_API_KEY',
+    },
+    'codex': {
+        cmd: 'codex',
+        args: (_model) => ['--acp'],
+        paths: [
+            '/usr/local/bin/codex',
+            `${process.env.HOME}/.npm-global/bin/codex`,
+        ],
+        envKey: 'OPENAI_API_KEY',
+    },
+};
+
+const DEFAULT_PROVIDER = 'gemini';
+
 export class ACPBridge {
     private geminiProcess: ChildProcess | null = null;
     private requestId = 1;
@@ -27,11 +68,16 @@ export class ACPBridge {
 
     constructor(
         private model: string,
-        private allowedPermissions: string[] = []
+        private allowedPermissions: string[] = [],
+        private provider: string = DEFAULT_PROVIDER
     ) { }
 
     public getModel(): string {
         return this.model;
+    }
+
+    public getProvider(): string {
+        return this.provider;
     }
 
     async start(options?: { authType?: string; apiKey?: string }): Promise<void> {
@@ -44,12 +90,15 @@ export class ACPBridge {
             }
         }
 
-        let cmd = 'gemini';
-        // Fallback for environments where global bin is not in PATH (like PM2)
+        const providerKey = this.provider in PROVIDER_COMMANDS
+            ? this.provider
+            : DEFAULT_PROVIDER;
+        const providerDef = PROVIDER_COMMANDS[providerKey];
+
+        let cmd = providerDef.cmd;
         const fs = await import('node:fs');
-        const paths = ['/usr/bin/gemini', '/usr/local/bin/gemini', '/root/.local/bin/gemini'];
-        for (const p of paths) {
-            if (fs.existsSync(p)) {
+        for (const p of providerDef.paths) {
+            if (p && fs.existsSync(p)) {
                 cmd = p;
                 break;
             }
@@ -61,11 +110,20 @@ export class ACPBridge {
             TERM: 'dumb',
             NO_COLOR: '1'
         };
-        if (options?.apiKey) {
-            env.GEMINI_API_KEY = options.apiKey;
+
+        if (options?.apiKey && providerDef.envKey) {
+            env[providerDef.envKey] = options.apiKey;
         }
 
-        this.geminiProcess = spawn(cmd, ['--experimental-acp', '-m', this.model], { env });
+        // For claude-code: pass model via env var (no --model arg)
+        if (providerKey === 'claude-code' && this.model) {
+            env.ANTHROPIC_MODEL = this.model;
+        }
+
+        const args = providerDef.args(this.model);
+        console.log(`[core/acp] Spawning ${cmd} ${args.join(' ')} (provider: ${providerKey})`);
+
+        this.geminiProcess = spawn(cmd, args, { env });
 
         if (!this.geminiProcess.stdout || !this.geminiProcess.stdin) {
             throw new Error('[core/acp] Failed to start gemini process or stream I/O');
@@ -144,7 +202,7 @@ export class ACPBridge {
             }
         });
 
-        console.log(`[core/acp] Spawned gemini --experimental-acp -m ${this.model}`);
+        console.log(`[core/acp] Spawned ${providerDef.cmd} (provider: ${providerKey})`);
 
         // 1. Initialize
         const initResult = await this.request('initialize', {

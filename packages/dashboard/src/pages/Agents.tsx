@@ -6,6 +6,7 @@ import {
     Clock, GitBranch, Loader2
 } from 'lucide-react';
 import { api, type AgentConfig } from '../services/api';
+import { useProviders, type ProviderMetadata } from '../hooks/useProviders';
 import './Agents.css';
 
 type TabType = 'overview' | 'files' | 'tools' | 'skills' | 'channels' | 'cron';
@@ -82,14 +83,19 @@ function EmptyState({ icon, title, description }: { icon: React.ReactNode; title
 // ─── Tab: Overview ──────────────────────────────────────────────────────────
 
 function OverviewTab({
-    formData, setFormData, models, isCreating, onSave
+    formData, setFormData, models, providers, isCreating, onSave
 }: {
     formData: AgentConfig;
     setFormData: (d: AgentConfig) => void;
     models: string[];
+    providers: ProviderMetadata[];
     isCreating: boolean;
     onSave: (e: React.FormEvent) => void;
 }) {
+    const selectedProvider = providers.find(p => p.id === (formData.provider || 'gemini'));
+    const availableModels = selectedProvider?.models || models;
+    const availableAuthTypes = selectedProvider?.authType || ['oauth-personal', 'gemini-api-key', 'vertex-ai'];
+
     const togglePermission = (id: string) => {
         const current = formData.allowedPermissions ?? [];
         const next = current.includes(id) ? current.filter(p => p !== id) : [...current, id];
@@ -114,15 +120,35 @@ function OverviewTab({
                         disabled={!isCreating}
                     />
                 </FormField>
-                <FormField label="Base Directory">
-                    <input
-                        className="form-input"
-                        value={formData.baseDir ?? ''}
-                        onChange={e => setFormData({ ...formData, baseDir: e.target.value })}
-                        placeholder="e.g. ./data/agents/main"
-                    />
+                <FormField label="Provider" hint="AI Platform / Binary context">
+                    <select
+                        className="form-select"
+                        value={formData.provider || 'gemini'}
+                        onChange={e => {
+                            const pId = e.target.value;
+                            const p = providers.find(prov => prov.id === pId);
+                            setFormData({
+                                ...formData,
+                                provider: pId,
+                                model: p?.models?.[0] || formData.model,
+                                authType: p?.authType?.[0] || formData.authType
+                            });
+                        }}
+                    >
+                        {providers.map(p => (
+                            <option key={p.id} value={p.id}>{p.name} ({p.type})</option>
+                        ))}
+                    </select>
                 </FormField>
             </div>
+            <FormField label="Base Directory">
+                <input
+                    className="form-input"
+                    value={formData.baseDir ?? ''}
+                    onChange={e => setFormData({ ...formData, baseDir: e.target.value })}
+                    placeholder="e.g. ./data/agents/main"
+                />
+            </FormField>
 
             {/* Models */}
             <SectionTitle>Model Selection</SectionTitle>
@@ -135,7 +161,7 @@ function OverviewTab({
                         required
                     >
                         <option value="" disabled>Select a model</option>
-                        {models.map(m => <option key={m} value={m}>{m}</option>)}
+                        {availableModels.map(m => <option key={m} value={m}>{m}</option>)}
                     </select>
                 </FormField>
                 <FormField label="Callback Model (Fallback #1)">
@@ -145,7 +171,7 @@ function OverviewTab({
                         onChange={e => setFormData({ ...formData, modelCallback: e.target.value })}
                     >
                         <option value="">None</option>
-                        {models.map(m => <option key={m} value={m}>{m}</option>)}
+                        {availableModels.map(m => <option key={m} value={m}>{m}</option>)}
                     </select>
                 </FormField>
             </div>
@@ -167,22 +193,27 @@ function OverviewTab({
                 <FormField label="Auth Type">
                     <select
                         className="form-select"
-                        value={formData.authType ?? 'oauth-personal'}
+                        value={formData.authType || availableAuthTypes[0]}
                         onChange={e => setFormData({ ...formData, authType: e.target.value as any })}
                     >
-                        <option value="oauth-personal">OAuth (Personal)</option>
-                        <option value="gemini-api-key">Gemini API Key</option>
-                        <option value="vertex-ai">Vertex AI</option>
+                        {availableAuthTypes.map(at => (
+                            <option key={at} value={at}>
+                                {at === 'oauth-personal' ? 'OAuth (Personal)' :
+                                    at === 'gemini-api-key' ? 'Gemini API Key' :
+                                        at === 'claude-api-key' ? 'Claude API Key' :
+                                            at === 'openai-api-key' ? 'OpenAI API Key' : at}
+                            </option>
+                        ))}
                     </select>
                 </FormField>
-                <FormField label="API Key" hint="Only required for gemini-api-key auth.">
+                <FormField label="API Key" hint="Optional if set via environment variables.">
                     <input
                         className="form-input"
                         type="password"
                         value={formData.apiKey ?? ''}
                         onChange={e => setFormData({ ...formData, apiKey: e.target.value })}
                         placeholder="Leave empty to use env variable"
-                        disabled={formData.authType !== 'gemini-api-key'}
+                        disabled={formData.authType === 'oauth-personal'}
                     />
                 </FormField>
             </div>
@@ -720,6 +751,7 @@ export function Agents() {
     const [agentMemory, setAgentMemory] = useState<any[]>([]);
     const [agentSessions, setAgentSessions] = useState<any[]>([]);
     const [isCreating, setIsCreating] = useState(false);
+    const { providers } = useProviders();
     const detailsRef = useRef<HTMLDivElement>(null);
 
     // ── Data fetching ──────────────────────────────────────────────────────
@@ -782,10 +814,23 @@ export function Agents() {
     };
 
     const handleCreateNew = () => {
+        const defaultProvider = providers[0]?.id || 'gemini';
+        const defaultModel = providers[0]?.models?.[0] || 'gemini-2.0-flash';
+        const defaultAuth = providers[0]?.authType?.[0] || 'oauth-personal';
+
         setSelectedAgentName(null);
         setIsCreating(true);
         setActiveTab('overview');
-        setFormData({ name: '', model: 'gemini-2.0-flash', modelCallback: '', fallbackModels: [], allowedPermissions: [], skills: [] });
+        setFormData({
+            name: '',
+            provider: defaultProvider,
+            model: defaultModel,
+            modelCallback: '',
+            fallbackModels: [],
+            allowedPermissions: [],
+            skills: [],
+            authType: defaultAuth
+        });
     };
 
     const handleSave = async (e: React.FormEvent) => {
@@ -989,6 +1034,7 @@ export function Agents() {
                                         formData={formData!}
                                         setFormData={setFormData}
                                         models={models}
+                                        providers={providers}
                                         isCreating={isCreating}
                                         onSave={handleSave}
                                     />

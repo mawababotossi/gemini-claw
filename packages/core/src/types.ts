@@ -4,18 +4,26 @@
  */
 import { InboundMessage, AgentResponse, OutboundAttachment } from '@geminiclaw/memory';
 
+export type ACPProvider =
+    | 'gemini'        // gemini --experimental-acp (default)
+    | 'claude-code'   // claude --acp (Claude Code CLI)
+    | 'codex'         // codex --acp (OpenAI Codex CLI)
+    | string;         // custom/future provider
+
 export interface AgentConfig {
     /** Agent identifier (matches agents.json) */
     name: string;
-    /** Primary Gemini model ID, e.g. "gemini-2.5-pro" */
+    /** Primary model ID, e.g. "gemini-2.0-flash" or "claude-3-5-sonnet" */
     model: string;
+    /** Optional ACP provider — defaults to "gemini" if omitted */
+    provider?: ACPProvider;
     /** Model to use if the primary model fails or is unavailable */
     modelCallback?: string;
     /** Ordered fallback models if primary and callback fail */
     fallbackModels?: string[];
     /** Auth type — mirrors AuthType from gemini-cli-core */
-    authType?: 'oauth-personal' | 'gemini-api-key' | 'vertex-ai';
-    /** API key (when authType = 'gemini-api-key') */
+    authType?: 'oauth-personal' | 'gemini-api-key' | 'vertex-ai' | 'claude-api-key' | 'openai-api-key';
+    /** API key (when authType = 'gemini-api-key' etc.) */
     apiKey?: string;
     /** Max history messages to inject as context */
     maxHistoryMessages?: number;
@@ -43,6 +51,8 @@ export interface ProviderConfig {
     apiKey?: string;
     baseUrl?: string;
     models?: string[];
+    /** CLI binary associated with this provider */
+    cli?: string;
 }
 
 export interface ProjectConfig {

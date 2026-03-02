@@ -12,6 +12,8 @@ echo "📦 Installing GeminiClaw into $INSTALL_DIR..."
 command -v node >/dev/null 2>&1 || { echo '❌ Node.js required (v20+)'; exit 1; }
 command -v pnpm >/dev/null 2>&1 || npm install -g pnpm
 command -v gemini >/dev/null 2>&1 || echo '⚠️  gemini-cli missing — install with: npm i -g @google/gemini-cli'
+command -v claude >/dev/null 2>&1 || echo '⚠️  claude-code missing — install with: npm i -g @anthropic-ai/claude-code'
+command -v codex >/dev/null 2>&1 || echo '⚠️  codex-cli missing'
 
 # Clone or update
 if [ -d "$INSTALL_DIR/.git" ]; then

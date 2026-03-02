@@ -18,9 +18,25 @@ export const onboardCommand = new Command('onboard')
         const answers = await inquirer.prompt([
             {
                 type: 'input',
+                name: 'projectName',
+                message: 'Nom du projet :',
+                default: 'My GeminiClaw'
+            },
+            {
+                type: 'input',
                 name: 'geminiKey',
                 message: 'Clé API Google Gemini (GEMINI_API_KEY) :',
                 validate: (v: string) => v.length > 10 || 'Clé invalide'
+            },
+            {
+                type: 'input',
+                name: 'anthropicKey',
+                message: 'Clé API Anthropic (pour Claude Code) [Optionnel] :',
+            },
+            {
+                type: 'input',
+                name: 'openaiKey',
+                message: 'Clé API OpenAI (pour Codex CLI) [Optionnel] :',
             },
             {
                 type: 'input',
@@ -50,6 +66,8 @@ export const onboardCommand = new Command('onboard')
         const envPath = path.join(home, '.env');
         const envContent = [
             `GEMINI_API_KEY=${answers.geminiKey}`,
+            answers.anthropicKey ? `ANTHROPIC_API_KEY=${answers.anthropicKey}` : '',
+            answers.openaiKey ? `OPENAI_API_KEY=${answers.openaiKey}` : '',
             `GEMINICLAW_API_TOKEN=${answers.gatewayToken}`,
             `NODE_ENV=production`,
             answers.telegramToken ? `TELEGRAM_BOT_TOKEN=${answers.telegramToken}` : '',
@@ -66,7 +84,30 @@ export const onboardCommand = new Command('onboard')
         const configPath = path.join(configDir, 'geminiclaw.json');
         if (!fs.existsSync(configPath)) {
             const defaultConfig = {
-                project: { name: 'My GeminiClaw' },
+                project: {
+                    name: answers.projectName || 'My GeminiClaw',
+                    defaultModel: "gemini-2.0-flash"
+                },
+                providers: [
+                    {
+                        name: "google",
+                        type: "google",
+                        apiKey: "${GEMINI_API_KEY}",
+                        models: ["gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"]
+                    },
+                    ...(answers.anthropicKey ? [{
+                        name: "claude",
+                        type: "anthropic",
+                        apiKey: "${ANTHROPIC_API_KEY}",
+                        models: ["claude-3-7-sonnet-latest", "claude-3-5-sonnet-latest", "claude-3-5-haiku-latest"]
+                    }] : []),
+                    ...(answers.openaiKey ? [{
+                        name: "openai",
+                        type: "openai",
+                        apiKey: "${OPENAI_API_KEY}",
+                        models: ["gpt-4o", "gpt-4o-mini", "o1-mini"]
+                    }] : [])
+                ],
                 channels: {
                     webchat: { enabled: true, port: 3001 },
                     telegram: { enabled: !!answers.telegramToken, token: "${TELEGRAM_BOT_TOKEN}" },
@@ -75,6 +116,7 @@ export const onboardCommand = new Command('onboard')
                 agents: [
                     {
                         name: "main",
+                        provider: "google",
                         model: "gemini-2.0-flash",
                         baseDir: "./data/agents/main"
                     }

@@ -1,8 +1,8 @@
 <div align="center">
 
-# 🦀 GeminiClaw
+# 🦀 GeminiClaw — ACP Gateway
 
-**Turn `gemini-cli` into a fully autonomous, multi-channel AI agent — without ever touching Google's OAuth.**
+**Turn `gemini-cli`, `claude-code`, and `codex` into fully autonomous, multi-channel AI agents.**
 
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org)
@@ -42,13 +42,17 @@ GeminiClaw was built from the ground up to sidestep this entire problem. Instead
 | OpenClaw + Antigravity OAuth | Extracts tokens from a subsidized IDE backend | ❌ ToS violation, account ban, no refund |
 | GeminiClaw + `gemini-cli` ACP | Runs the official binary you already authenticated | ✅ Fully within Google's intended use |
 
-The `--experimental-acp` mode is the **same protocol** used by Zed, Emacs, and other official integrations. Google ships and maintains it. GeminiClaw wraps it as a long-running supervised subprocess — your Google account authenticates `gemini-cli` once via the standard flow, and GeminiClaw never touches your OAuth tokens. It sends prompts to stdin and reads responses from stdout, exactly as an IDE would.
+The `--experimental-acp` mode (or internal ACP protocols for Claude/Codex) is the **same protocol** used by Zed, Emacs, and other official integrations. GeminiClaw wraps these as long-running supervised subprocesses. Your account authenticates the CLI once via the standard flow, and GeminiClaw never touches your API keys or tokens during execution except to pass them to the official binary.
 
 ---
 
-## 1. Overview
+**GeminiClaw** is an open-source **agent supervision framework** built around the **ACP (Agent Communication Protocol)**. It supports multiple providers out-of-the-box:
 
-**GeminiClaw** is an open-source **agent supervision framework** built around the experimental **ACP (Agent Communication Protocol)** of `gemini-cli`. It exposes Gemini models as persistent autonomous agents equipped with:
+- **Google Gemini** (via `gemini-cli`)
+- **Anthropic Claude** (via `claude-code`)
+- **OpenAI Codex** (via `codex-cli`)
+
+It exposes these models as persistent autonomous agents equipped with:
 
 - **Long-term memory** (JSONL transcripts + `MEMORY.md` file)
 - **Visible reasoning** (native `thought_chunk` stream)
@@ -64,7 +68,7 @@ The `--experimental-acp` mode is the **same protocol** used by Zed, Emacs, and o
 In early 2025, many AI framework users faced account suspensions for using "scraping" or "OAuth token injection" methods to access frontier models. These methods violate the implicit contract of flat-rate pricing.
 
 ### The Answer: Official ACP Integration
-GeminiClaw drives the **official `gemini-cli` binary directly** through its own supported integration protocol: `--experimental-acp`. This is the same protocol used by official IDE integrations like Zed. Your Google account authenticates the CLI once, and GeminiClaw never touches your OAuth tokens.
+GeminiClaw drives **official CLI binaries directly** through their supported integration protocols (ACP). This is the same protocol used by official IDE integrations like Zed. Your account authenticates the CLI once, and GeminiClaw never touches your raw tokens.
 
 | Feature | Gemini API | GeminiClaw |
 |---|---|---|
@@ -72,7 +76,7 @@ GeminiClaw drives the **official `gemini-cli` binary directly** through its own 
 | Visible Chain-of-Thought | ❌ | ✅ Native `thought_chunk` stream |
 | Autonomous ReAct loops with tools | Manual | ✅ Built-in via MCP |
 | Multi-channel routing | ❌ | ✅ Pluggable adapters |
-| Google Account Safety | ⚠️ OAuth Risk | ✅ Official ACP binary |
+| Google/Anthropic Safety | | ✅ Official ACP binary |
 | Admin Dashboard | ❌ | ✅ React UI with live logs |
 
 ---
@@ -89,8 +93,8 @@ GeminiClaw drives the **official `gemini-cli` binary directly** through its own 
   Slack    ─────────┤  AgentRuntime ◄──── SessionMap           │
   Internal ─────────┤       │                                  │
                     │       ▼                                  │
-                    │   ACPBridge ──── gemini --experimental   │
-                    │       │           -acp (subprocess)      │
+                    │   ACPBridge ──── CLI Subprocess        │
+                    │       │           (gemini / claude)      │
                     │       ▼                                  │
                     │  SkillMcpServer (JS tools via MCP)       │
                     │       │                                  │
@@ -106,7 +110,7 @@ GeminiClaw drives the **official `gemini-cli` binary directly** through its own 
 |---|---|
 | **Gateway** | Central WebSocket hub. Receives messages from all channels, routes them to the correct agent. |
 | **AgentRuntime** | Manages agent lifecycle: sessions, heartbeats, queues, and GC of inactive bridges. |
-| **ACPBridge** | Subprocess supervisor for `gemini --experimental-acp`. Handles JSON-RPC stdin/stdout streaming. |
+| **ACPBridge** | Subprocess supervisor for AI CLIs. Handles JSON-RPC stdin/stdout streaming for Gemini, Claude Code, and Codex. |
 | **MessageQueue** | Per-session FIFO queue to prevent context corruption during simultaneous messages. |
 | **SkillMcpServer** | HTTP/SSE MCP server exposing registered JS skills to the agent. |
 | **TranscriptStore** | Persistence of conversations in JSONL format + `MEMORY.md` for long-term memory. |
@@ -228,10 +232,11 @@ geminiclaw onboard    # guided configuration wizard
 | Field | Type | Description |
 |---|---|---|
 | `name` | `string` | Unique agent identifier (used for routing) |
-| `model` | `string` | Primary Gemini model (e.g., `gemini-2.5-pro-preview`) |
+| `provider` | `string` | AI Provider: `gemini`, `claude-code`, `codex` |
+| `model` | `string` | Primary model (e.g., `gemini-2.0-flash`, `claude-3-7-sonnet`) |
 | `fallbackModels` | `string[]` | Ordered list of fallback models if the primary fails |
-| `authType` | `string` | Auth type: `oauth-personal`, `gemini-api-key`, `vertex-ai` |
-| `apiKey` | `string` | API Key (if `authType = gemini-api-key`). Supports `${ENV_VAR}` |
+| `authType` | `string` | Auth type: `oauth-personal`, `gemini-api-key`, `claude-api-key`, `openai-api-key` |
+| `apiKey` | `string` | API Key. Required for non-OAuth flows. Supports `${ENV_VAR}` |
 | `systemPrompt` | `string` | Path to a Markdown system prompt file |
 | `allowedPermissions` | `string[]` | Auto-approved tools without confirmation prompts |
 | `mcpServers` | `array` | External MCP servers to mount |

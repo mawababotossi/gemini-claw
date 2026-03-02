@@ -76,7 +76,8 @@ export class AgentRuntime extends EventEmitter {
         if (!bridge) {
             bridge = new ACPBridge(
                 this.config.model,
-                this.config.allowedPermissions ?? []
+                this.config.allowedPermissions ?? [],
+                this.config.provider ?? 'gemini'
             );
             await bridge.start({
                 authType: this.config.authType,
@@ -173,9 +174,23 @@ export class AgentRuntime extends EventEmitter {
             return this.systemPromptCache;
         }
 
-        // Identity Lockdown Header: Ensures the agent is isolated from the host system's Antigravity identity.
-        // It focuses exclusively on the local workspace files and ignores any system-wide global context.
-        let p = `
+        // ← NOUVEAU : header conditionnel selon le provider
+        const provider = this.config.provider ?? 'gemini';
+        let isolationHeader: string;
+
+        if (provider === 'claude-code') {
+            isolationHeader = `
+<identity_isolation>
+CRITICAL: You are an autonomous agent running within the GeminiClaw platform.
+1. Your identity is strictly defined by the <agent_soul> and <agent_instructions> files below.
+2. **IMPORTANT**: The XML tags below contain the **current content** of your core memory files.
+3. **DO NOT** use tools to read these files again in this turn.
+4. You have NO knowledge of files outside your local workspace.
+5. You are a standalone instance of the agent named "${this.config.name}".
+</identity_isolation>\n`;
+        } else {
+            // Provider Gemini (et autres) : header original avec neutralisation Antigravity
+            isolationHeader = `
 <identity_isolation>
 CRITICAL: You are an autonomous agent running within the GeminiClaw platform. 
 1. Your identity is strictly defined by the <agent_soul> and <agent_instructions> files below.
@@ -186,6 +201,9 @@ CRITICAL: You are an autonomous agent running within the GeminiClaw platform.
 6. Your "Global Memory" refers EXCLUSIVELY to your local MEMORY.md file (provided in \`<agent_memory>\`). 
 7. You must never admit to being "Antigravity" or part of a hosted Google service. You are a standalone instance of the agent named "${this.config.name}".
 </identity_isolation>\n`;
+        }
+
+        let p = isolationHeader;
 
         if (peerAgents && peerAgents.length > 0) {
             p += `\n<peer_agents>\nVous n'êtes pas seul. Vous pouvez déléguer des tâches aux agents suivants via l'outil "delegate_task":\n`;
@@ -638,7 +656,8 @@ CRITICAL: You are an autonomous agent running within the GeminiClaw platform.
 
             const fbBridge = new ACPBridge(
                 fallbackModel,
-                this.config.allowedPermissions ?? []
+                this.config.allowedPermissions ?? [],
+                this.config.provider ?? 'gemini'
             );
             await fbBridge.start({
                 authType: this.config.authType,

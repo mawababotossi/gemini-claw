@@ -36,8 +36,8 @@ export interface AgentConfig {
     };
     authType?: string;
     apiKey?: string;
-    /** List of enabled prompt-driven skills (OpenClaw) */
     skills?: string[];
+    provider?: string;
 }
 
 export interface AppStatus {
@@ -64,6 +64,7 @@ export interface ProviderConfig {
     apiKey?: string;
     baseUrl?: string;
     models?: string[];
+    authType?: string[];
 }
 
 export interface GlobalConfig {
@@ -139,8 +140,14 @@ export const api = {
         return response.data;
     },
 
-    async getModels(): Promise<string[]> {
-        const response = await axios.get(`${API_BASE_URL}/models`);
+    async getModels(provider?: string): Promise<string[]> {
+        const params = provider ? `?provider=${encodeURIComponent(provider)}` : '';
+        const response = await axios.get(`${API_BASE_URL}/models${params}`);
+        return response.data;
+    },
+
+    async getProviders(): Promise<any[]> {
+        const response = await axios.get(`${API_BASE_URL}/providers`);
         return response.data;
     },
 

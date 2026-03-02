@@ -341,6 +341,20 @@ async function main(): Promise<void> {
         }
     });
 
+    // API: List available providers (metadata for dashboard)
+    app.get('/api/providers', (req, res) => {
+        const providers = gateway.getProviders().map(p => ({
+            id: p.name,
+            name: p.name,
+            type: p.type,
+            models: p.models || [],
+            authType: p.type === 'google' ? ['gemini-api-key', 'oauth-personal'] :
+                p.type === 'anthropic' ? ['claude-api-key'] :
+                    p.type === 'openai' ? ['openai-api-key'] : []
+        }));
+        res.json(providers);
+    });
+
     // API: Get transcript
     app.get('/api/transcripts/:channel/:peerId', (req, res) => {
         const { channel, peerId } = req.params;
@@ -385,7 +399,8 @@ async function main(): Promise<void> {
 
     // API: List available models
     app.get('/api/models', (req, res) => {
-        const models = gateway.listAvailableModels();
+        const provider = req.query.provider as string | undefined;
+        const models = gateway.listAvailableModels(provider);
         res.json(models);
     });
 
