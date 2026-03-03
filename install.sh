@@ -6,6 +6,7 @@ set -euo pipefail
 INSTALL_DIR="${CLAWGATE_HOME:-$HOME/.clawgate}"
 BIN_PATH="/usr/local/bin/clawgate"
 
+
 echo "📦 Installing ClawGate into $INSTALL_DIR..."
 
 # Dependency checks
@@ -21,11 +22,15 @@ if [ -d "$INSTALL_DIR/.git" ]; then
   git -C "$INSTALL_DIR" pull --ff-only
 else
   echo "🚚 Cloning repository..."
+  rm -rf "$INSTALL_DIR"
   git clone https://github.com/mawababotossi/ClawGate.git "$INSTALL_DIR"
 fi
 
 cd "$INSTALL_DIR"
-echo "🛠️  Installing dependencies..."
+echo "� Creating default data directories..."
+mkdir -p config/data/skills config/data/agents/main data/skills data/agents/main
+
+echo "�🛠️  Installing dependencies..."
 pnpm install --frozen-lockfile
 echo "🏗️  Building project..."
 pnpm build
