@@ -16,12 +16,17 @@ export function loadEnv(): string {
     let current = __dirname;
     let envPath: string | null = null;
 
-    // Search up to 10 levels deep for the project root (containing packages/ or .env)
+    // Search up to 10 levels deep for the project root
     for (let i = 0; i < 10; i++) {
-        const potentialEnv = path.join(current, '.env');
-        if (fs.existsSync(potentialEnv)) {
-            envPath = potentialEnv;
-            break;
+        const hasPackages = fs.existsSync(path.join(current, 'packages'));
+        const hasConfig = fs.existsSync(path.join(current, 'config'));
+
+        if (hasPackages && hasConfig) {
+            const potentialEnv = path.join(current, '.env');
+            if (fs.existsSync(potentialEnv)) {
+                envPath = potentialEnv;
+            }
+            break; // Found the root!
         }
 
         const parent = path.dirname(current);
