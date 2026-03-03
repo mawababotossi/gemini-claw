@@ -29,14 +29,16 @@ export const statusCommand = new Command('status')
             // Check PM2 first (preferred on server)
             try {
                 const pm2Name = `clawgate-${svc.name.toLowerCase()}`;
-                const pm2Data = execSync(`pm2 jlist | jq '.[] | select(.name=="${pm2Name}") | .pm2_env.status'`).toString().trim().replace(/"/g, '');
-                if (pm2Data === 'online') {
+                const jlist = execSync('pm2 jlist').toString();
+                const apps = JSON.parse(jlist);
+                const app = apps.find((a: any) => a.name === pm2Name);
+
+                if (app && app.pm2_env.status === 'online') {
                     status = '🟢 Running (PM2)';
-                    const pm2Pid = execSync(`pm2 jlist | jq '.[] | select(.name=="${pm2Name}") | .pid'`).toString().trim();
-                    info = `(PID: ${pm2Pid})`;
+                    info = `(PID: ${app.pid})`;
                 }
             } catch {
-                // Ignore if pm2 or jq fails
+                // Ignore if pm2 fails
             }
 
             if (status === '🔘 Stopped' && fs.existsSync(pidPath)) {
