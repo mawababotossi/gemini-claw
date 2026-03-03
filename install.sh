@@ -29,6 +29,7 @@ fi
 cd "$INSTALL_DIR"
 echo "� Creating default data directories..."
 mkdir -p config/data/skills config/data/agents/main data/skills data/agents/main
+cp -r data/skills/* config/data/skills/ 2>/dev/null || true
 
 echo "�🛠️  Installing dependencies..."
 pnpm install --frozen-lockfile
