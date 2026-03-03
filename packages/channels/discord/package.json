@@ -12,5 +12,8 @@
         "@clawgate/core": "workspace:*",
         "@clawgate/memory": "workspace:*"
     },
-    "license": "Apache-2.0"
+    "license": "Apache-2.0",
+    "dependencies": {
+        "discord.js": "^14.25.1"
+    }
 }

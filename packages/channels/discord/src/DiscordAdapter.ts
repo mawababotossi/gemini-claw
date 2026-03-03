@@ -109,7 +109,7 @@ export class DiscordAdapter {
 
         this.client.login(process.env['DISCORD_TOKEN']).then(() => {
             console.log(`[discord] Logged in as ${this.client.user?.tag}`);
-        }).catch(err => {
+        }).catch((err: any) => {
             console.error('[discord] Login failed:', err);
         });
     }
