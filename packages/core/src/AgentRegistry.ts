@@ -58,6 +58,7 @@ export class AgentRegistry {
             fs.mkdirSync(memoryDir, { recursive: true });
         }
 
+        const agentName = path.basename(baseDir);
         const defaultFiles = [
             {
                 name: 'IDENTITY.md',
@@ -174,7 +175,6 @@ This file is located at ~/workspace/HEARTBEAT.md.
             }
         ];
 
-        const agentName = path.basename(baseDir);
         for (const file of defaultFiles) {
             const filePath = path.join(workspaceDir, file.name);
             if (!fs.existsSync(filePath)) {
