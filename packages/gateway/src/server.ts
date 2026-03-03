@@ -13,6 +13,8 @@ import type { Response } from 'express';
 import { requireApiToken } from './middleware/apiAuth.js';
 import { WebSocketServer } from 'ws';
 
+
+
 // --- Log Interception ---
 const logClients = new Set<Response>();
 interface LogEntry { timestamp: string; level: string; text: string; }
@@ -167,6 +169,7 @@ async function main(): Promise<void> {
     const { rateLimit } = await import('express-rate-limit');
 
     const app = express();
+    app.set('trust proxy', 1); // Trust Nginx proxy (1 hop)
 
     // Rate Limiting
     const apiLimiter = rateLimit({
