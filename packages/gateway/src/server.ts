@@ -5,7 +5,7 @@
  * Bootstraps gateway + channels from config/clawgate.json.
  */
 import { loadEnv } from './utils/env.js';
-loadEnv();
+const rootDir = loadEnv();
 import { Gateway, loadConfig } from './index.js';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -77,13 +77,16 @@ console.debug = (...args) => broadcastLog('debug', ...args);
 console.trace = (...args) => broadcastLog('trace', ...args);
 // ------------------------
 
-const CONFIG_PATH = process.env['CONFIG_PATH'] ?? './config/clawgate.json';
+const defaultPath = path.join(rootDir, 'config/clawgate.json');
+const configPath = process.env['CONFIG_PATH']
+    ? path.resolve(rootDir, process.env['CONFIG_PATH'])
+    : defaultPath;
 
 async function main(): Promise<void> {
     console.log('[clawgate] Starting...');
+    const config = loadConfig(configPath);
 
-    const config = loadConfig(CONFIG_PATH);
-    console.log(`[clawgate] Configuration loaded from: ${path.resolve(CONFIG_PATH)}`);
+    console.log(`[clawgate] Configuration loaded from: ${configPath}`);
     console.log(`[clawgate] Enabled channels: ${Object.keys(config.channels).filter(c => config.channels[c]?.enabled).join(', ')}`);
     const gateway = new Gateway(config);
 
