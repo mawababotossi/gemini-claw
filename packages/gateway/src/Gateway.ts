@@ -300,11 +300,11 @@ export class Gateway implements IGateway {
                 }
 
                 try {
-                    const runtime = this.registry.get(agentName);
+                    const runtime = this.registry.get(agentName)!;
                     const baseDir = runtime.getConfig().baseDir;
                     if (!baseDir) throw new Error('Agent has no base directory configured.');
 
-                    const filePath = path.join(baseDir, filename);
+                    const filePath = path.join(baseDir, 'workspace', filename);
                     if (!fs.existsSync(filePath)) {
                         return { content: '', message: `File ${filename} is empty or does not exist.` };
                     }
@@ -357,11 +357,11 @@ export class Gateway implements IGateway {
                 }
 
                 try {
-                    const runtime = this.registry.get(agentName);
+                    const runtime = this.registry.get(agentName)!;
                     const baseDir = runtime.getConfig().baseDir;
                     if (!baseDir) throw new Error('Agent has no base directory configured.');
 
-                    const filePath = path.join(baseDir, filename);
+                    const filePath = path.join(baseDir, 'workspace', filename);
                     if (mode === 'append') {
                         fs.appendFileSync(filePath, '\n' + content);
                     } else {

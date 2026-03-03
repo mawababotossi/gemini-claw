@@ -268,5 +268,11 @@ export const api = {
     async getTranscript(channel: string, peerId: string): Promise<any[]> {
         const response = await axios.get(`${API_BASE_URL}/transcripts/${channel}/${peerId}`);
         return response.data;
+    },
+
+    // ── Heartbeat ──
+    async triggerAgentHeartbeat(name: string): Promise<{ success: boolean; message?: string }> {
+        const response = await axios.post(`${API_BASE_URL}/agents/${encodeURIComponent(name)}/heartbeat`);
+        return response.data;
     }
 };

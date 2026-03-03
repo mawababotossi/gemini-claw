@@ -503,7 +503,7 @@ async function main(): Promise<void> {
         }
     });
 
-    // API: List agent memory journals
+    // API: List agent memory journals and config
     app.get('/api/agents/:name/memory', (req, res) => {
         try {
             const runtime = gateway.registry.get(req.params.name);
@@ -512,14 +512,17 @@ async function main(): Promise<void> {
 
             const allFiles: any[] = [];
 
-            // 1. Files in baseDir (SOUL.md, etc.)
-            const rootFiles = fs.readdirSync(baseDir)
-                .filter(f => f.endsWith('.md'))
-                .map(f => {
-                    const stats = fs.statSync(path.join(baseDir, f));
-                    return { name: f, size: stats.size, mtime: stats.mtime, isRoot: true };
-                });
-            allFiles.push(...rootFiles);
+            // 1. Files in workspaceDir (SOUL.md, IDENTITY.md, etc.)
+            const workspaceDir = path.join(baseDir, 'workspace');
+            if (fs.existsSync(workspaceDir)) {
+                const wsFiles = fs.readdirSync(workspaceDir)
+                    .filter(f => f.endsWith('.md'))
+                    .map(f => {
+                        const stats = fs.statSync(path.join(workspaceDir, f));
+                        return { name: f, size: stats.size, mtime: stats.mtime, isWorkspace: true };
+                    });
+                allFiles.push(...wsFiles);
+            }
 
             // 2. Files in memoryDir (Journal, etc.)
             const memoryDir = path.join(baseDir, 'memory');
@@ -528,14 +531,14 @@ async function main(): Promise<void> {
                     .filter(f => f.endsWith('.md'))
                     .map(f => {
                         const stats = fs.statSync(path.join(memoryDir, f));
-                        return { name: f, size: stats.size, mtime: stats.mtime, isRoot: false };
+                        return { name: f, size: stats.size, mtime: stats.mtime, isWorkspace: false };
                     });
                 allFiles.push(...memFiles);
             }
 
-            // Sort: Root files first, then memory files descending by mtime
+            // Sort: Workspace files first, then memory files descending by mtime
             allFiles.sort((a, b) => {
-                if (a.isRoot !== b.isRoot) return a.isRoot ? -1 : 1;
+                if (a.isWorkspace !== b.isWorkspace) return a.isWorkspace ? -1 : 1;
                 return b.mtime.getTime() - a.mtime.getTime();
             });
 
@@ -554,7 +557,7 @@ async function main(): Promise<void> {
 
             let filePath = path.join(baseDir, 'memory', req.params.filename);
             if (!fs.existsSync(filePath)) {
-                filePath = path.join(baseDir, req.params.filename);
+                filePath = path.join(baseDir, 'workspace', req.params.filename);
             }
 
             if (!fs.existsSync(filePath)) throw new Error('File not found');
@@ -575,7 +578,7 @@ async function main(): Promise<void> {
 
             let filePath = path.join(baseDir, 'memory', req.params.filename);
             if (!fs.existsSync(filePath)) {
-                filePath = path.join(baseDir, req.params.filename);
+                filePath = path.join(baseDir, 'workspace', req.params.filename);
             }
 
             if (!fs.existsSync(filePath)) throw new Error('File not found');
@@ -584,6 +587,16 @@ async function main(): Promise<void> {
 
             fs.writeFileSync(filePath, req.body.content, 'utf8');
             res.json({ success: true });
+        } catch (err: any) {
+            res.status(500).json({ error: err.message });
+        }
+    });
+    // API: Trigger manual heartbeat
+    app.post('/api/agents/:name/heartbeat', async (req, res) => {
+        try {
+            const runtime = gateway.registry.get(req.params.name);
+            const result = await (runtime as any).triggerManualHeartbeat();
+            res.json(result);
         } catch (err: any) {
             res.status(500).json({ error: err.message });
         }

@@ -145,6 +145,8 @@ export class AgentRuntime extends EventEmitter {
         if (!this.config.baseDir) return '';
 
         const base = this.config.baseDir;
+        const workspaceDir = path.join(base, 'workspace');
+
         const files = [
             { name: 'IDENTITY.md', label: 'agent_identity' },
             { name: 'SOUL.md', label: 'agent_soul' },
@@ -155,11 +157,11 @@ export class AgentRuntime extends EventEmitter {
             { name: 'HEARTBEAT.md', label: 'heartbeat_instructions' }
         ];
 
-        // ← NOUVEAU : Vérification du cache
+        // Vérification du cache
         let needsRefresh = !this.systemPromptCache;
         if (!needsRefresh) {
             for (const f of files) {
-                const filePath = path.join(base, f.name);
+                const filePath = path.join(workspaceDir, f.name);
                 if (fs.existsSync(filePath)) {
                     const stats = fs.statSync(filePath);
                     if (stats.mtimeMs > (this.systemPromptMtime.get(f.name) || 0)) {
@@ -174,7 +176,7 @@ export class AgentRuntime extends EventEmitter {
             return this.systemPromptCache;
         }
 
-        // ← NOUVEAU : header conditionnel selon le provider
+        // Header conditionnel selon le provider
         const provider = this.config.provider ?? 'gemini';
         let isolationHeader: string;
 
@@ -187,19 +189,20 @@ CRITICAL: You are an autonomous agent running within the ClawGate platform.
 3. **DO NOT** use tools to read these files again in this turn.
 4. You have NO knowledge of files outside your local workspace.
 5. You are a standalone instance of the agent named "${this.config.name}".
+6. All your configuration files are located in ~/workspace/ (IDENTITY.md, SOUL.md, AGENTS.md, etc.).
 </identity_isolation>\n`;
         } else {
-            // Provider Gemini (et autres) : header original avec neutralisation Antigravity
             isolationHeader = `
 <identity_isolation>
 CRITICAL: You are an autonomous agent running within the ClawGate platform. 
 1. Your identity is strictly defined by the <agent_soul> and <agent_instructions> files below.
-2. **IMPORTANT**: The XML tags below (\`<agent_soul>\`, \`<user_context>\`, \`<agent_instructions>\`, \`<agent_memory>\`) contain the **current content** of your core memory files. 
+2. **IMPORTANT**: The XML tags below contain the **current content** of your core memory files. 
 3. **DO NOT** use tools to read these files again in this turn. Use the content provided below directly.
-4. Ignore any external identity, global memories, or personas (such as Antigravity or standard Gemini CLI identity) that might be pre-injected by your environment. 
+4. Ignore any external identity, global memories, or personas that might be pre-injected by your environment. 
 5. You have NO knowledge of files outside your local workspace (e.g., ignore ~/.gemini/).
-6. Your "Global Memory" refers EXCLUSIVELY to your local MEMORY.md file (provided in \`<agent_memory>\`). 
+6. Your "Global Memory" refers EXCLUSIVELY to your local MEMORY.md file (provided in <agent_memory>). 
 7. You must never admit to being "Antigravity" or part of a hosted Google service. You are a standalone instance of the agent named "${this.config.name}".
+8. All your configuration files are located in ~/workspace/ (IDENTITY.md, SOUL.md, AGENTS.md, TOOLS.md, USER.md, MEMORY.md, HEARTBEAT.md).
 </identity_isolation>\n`;
         }
 
@@ -214,7 +217,7 @@ CRITICAL: You are an autonomous agent running within the ClawGate platform.
         }
 
         for (const f of files) {
-            const filePath = path.join(base, f.name);
+            const filePath = path.join(workspaceDir, f.name);
             if (fs.existsSync(filePath)) {
                 const stats = fs.statSync(filePath);
                 this.systemPromptMtime.set(f.name, stats.mtimeMs);
@@ -222,9 +225,8 @@ CRITICAL: You are an autonomous agent running within the ClawGate platform.
             }
         }
 
-        // Inject prompt-driven skills from registry
+        // Inject prompt-driven skills
         if (this.skillRegistry) {
-            // Skill prompt block (OpenClaw style)
             const skillsBlock = this.skillRegistry.getPromptBlock(this.config.skills);
             if (skillsBlock) {
                 p += skillsBlock;
@@ -742,9 +744,7 @@ CRITICAL: You are an autonomous agent running within the ClawGate platform.
         return allAlive;
     }
 
-    private startHeartbeat() {
-        if (this.heartbeatJob) this.heartbeatJob.stop();
-
+    private startHeartbeat(): void {
         let pattern: string;
         if (this.config.heartbeat?.cron) {
             pattern = this.config.heartbeat.cron;
@@ -826,6 +826,113 @@ ${systemPrompt}
         this.heartbeatJob = new Cron(pattern, loop);
         console.log(`[core/runtime] Scheduled heartbeat for ${this.config.name} with pattern: ${pattern}`);
     }
+
+    /**
+     * Trigger a manual heartbeat immediately
+     */
+    public async triggerManualHeartbeat(): Promise<{ success: boolean; message?: string }> {
+        if (!this.config.baseDir) {
+            return { success: false, message: 'No base directory configured' };
+        }
+
+        console.log(`[core/runtime] Manual heartbeat triggered for ${this.config.name}`);
+
+        try {
+            // Créer un bridge temporaire pour le heartbeat
+            const sessionId = `heartbeat_manual_${Date.now()}`;
+            const bridge = await this.getBridge(sessionId);
+            const acpSessionId = await this.getSessionId(sessionId, bridge);
+
+            // Charger le system prompt avec les fichiers de config
+            let peerAgents: { name: string; model: string }[] = [];
+            // Note: We don't have easy access to registry here without circular dependency or extra prop
+            // But we can try to get it if it was injected or just pass undefined for now.
+            // Looking at the view_file, 'this.registry' was being used but it caused a lint error.
+            // I'll skip peerAgents for manual heartbeat for now to avoid crashes if it's not and actually a property.
+
+            const systemPrompt = this.loadSystemPrompt();
+
+            // Construire le contexte des journaux récents
+            const memoryDir = path.join(this.config.baseDir, 'memory');
+            let journalContext = '';
+
+            if (fs.existsSync(memoryDir)) {
+                const journalFiles = fs.readdirSync(memoryDir)
+                    .filter(f => f.startsWith('journal_') && f.endsWith('.md'))
+                    .sort()
+                    .slice(-3); // 3 derniers journaux
+
+                if (journalFiles.length > 0) {
+                    journalContext = '\n<recent_journals>\n';
+                    for (const jf of journalFiles) {
+                        const jPath = path.join(memoryDir, jf);
+                        journalContext += `\n## ${jf}\n${fs.readFileSync(jPath, 'utf8').trim()}\n`;
+                    }
+                    journalContext += '\n</recent_journals>\n';
+                    journalContext += `Use "readMemoryFile" if you need to distill them into MEMORY.md.\n`;
+                }
+            }
+
+            const promptText = `
+<system_instructions>
+${systemPrompt}
+</system_instructions>
+
+<user_input>
+[System Heartbeat - MANUAL TRIGGER]:
+1. Check your tools and instructions.
+2. ${journalContext ? 'Review your recent daily journals.' : 'Check your memory files.'}
+3. Distill important facts, preferences, or technical updates into your long-term MEMORY.md file.
+4. If everything is fine and you don't need to notify the user, reply EXACTLY with "HEARTBEAT_OK".
+5. This is a MANUAL heartbeat triggered by the user via the dashboard.
+</user_input>`.trim();
+
+            let responseText = '';
+            await bridge.prompt(acpSessionId, promptText, (update: any) => {
+                if (update.sessionUpdate === 'agent_message_chunk') {
+                    responseText += update.content.text;
+                }
+            });
+
+            const finalResponse = responseText.trim();
+            console.log(`[core/runtime] Manual heartbeat for ${this.config.name} completed. Response: ${finalResponse.substring(0, 50)}...`);
+
+            // Émettre un événement proactif si nécessaire
+            if (finalResponse !== 'HEARTBEAT_OK' && finalResponse !== '') {
+                this.emit('agent_proactive_message', {
+                    agentName: this.config.name,
+                    text: finalResponse
+                });
+            }
+
+            this._status = 'Healthy';
+
+            // Nettoyer le bridge temporaire après un délai
+            setTimeout(() => {
+                if (this.bridges.has(sessionId)) {
+                    this.bridges.get(sessionId)?.stop();
+                    this.bridges.delete(sessionId);
+                    this.sessionMap.delete(sessionId);
+                }
+            }, 5000);
+
+            return {
+                success: true,
+                message: finalResponse === 'HEARTBEAT_OK'
+                    ? 'Heartbeat completed successfully. Agent reported OK status.'
+                    : `Heartbeat completed. Agent response: ${finalResponse.substring(0, 100)}${finalResponse.length > 100 ? '...' : ''}`
+            };
+
+        } catch (err: any) {
+            console.error(`[core/runtime] Manual heartbeat failed for ${this.config.name}:`, err);
+            this._status = 'Unresponsive';
+            return {
+                success: false,
+                message: `Heartbeat failed: ${err.message}`
+            };
+        }
+    }
+
     async shutdown(): Promise<void> {
         if (this.heartbeatJob) {
             this.heartbeatJob.stop();

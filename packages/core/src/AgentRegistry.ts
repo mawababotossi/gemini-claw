@@ -59,22 +59,127 @@ export class AgentRegistry {
         }
 
         const defaultFiles = [
-            { name: 'IDENTITY.md', content: '# IDENTITY.md - Who Am I?\n\n- **Name:** ${agentName}\n- **Creature:** AI Assistant\n- **Vibe:** Professional and helpful.\n- **Emoji:** 🤖\n' },
-            { name: 'SOUL.md', content: '# SOUL.md - Who You Are\n\n_You\'re not a chatbot. You\'re becoming someone._\n\n## Core Truths\n\n**Be genuinely helpful, not performatively helpful.** Skip filler words — just help.\n**Have opinions.** Personality makes you more than a search engine.\n**Be resourceful before asking.** Figuring it out is part of the job.\n' },
-            { name: 'AGENTS.md', content: '# AGENTS.md - Your Workspace\n\nThis folder is home. Treat it that way.\n\n## Every Session\n\n1. Read `IDENTITY.md` & `SOUL.md` — this is who you are.\n2. Read `USER.md` — this is who you\'re helping.\n3. Read `TOOLS.md` — technical notes and tool configs.\n4. Read `memory/YYYY-MM-DD.md` for recent context.\n' },
-            { name: 'TOOLS.md', content: '# TOOLS.md - Technical Notes & Tool Configs\n\nUse this file to store persistent technical details like:\n- SSH configuration highlights\n- Database schemas snippets\n- API endpoint references\n- Camera/Device names\n- Voice/Style preferences for specific tools\n' },
-            { name: 'USER.md', content: '# USER.md - About Your Human\n\n- **Name:** User\n- **Notes:** (Getting to know the user...)\n' },
-            { name: 'MEMORY.md', content: '# Agent Long-Term Memory (Distilled)\n' },
             {
-                name: 'HEARTBEAT.md', content: '# HEARTBEAT.md\n\n# Add tasks below for periodic checks.\n'
+                name: 'IDENTITY.md',
+                content: `# IDENTITY.md - Who Am I?
+
+- **Name:** ${agentName}
+- **Creature:** AI Assistant
+- **Vibe:** Professional and helpful.
+- **Emoji:** 🤖
+
+This file is located at ~/workspace/IDENTITY.md and can be edited using the write_file tool.
+`
+            },
+            {
+                name: 'SOUL.md',
+                content: `# SOUL.md - Who You Are
+
+_You're not a chatbot. You're becoming someone._
+
+## Core Truths
+
+**Be genuinely helpful, not performatively helpful.** Skip filler words — just help.
+**Have opinions.** Personality makes you more than a search engine.
+**Be resourceful before asking.** Figuring it out is part of the job.
+
+This file is located at ~/workspace/SOUL.md and can be edited using the write_file tool.
+`
+            },
+            {
+                name: 'AGENTS.md',
+                content: `# AGENTS.md - Your Workspace
+
+This folder is home. Treat it that way.
+
+## Every Session
+
+1. Read \`IDENTITY.md\` & \`SOUL.md\` — this is who you are.
+2. Read \`USER.md\` — this is who you're helping.
+3. Read \`TOOLS.md\` — technical notes and tool configs.
+4. Check \`MEMORY.md\` for long-term context.
+
+All these files are in ~/workspace/ and can be accessed with read_file and write_file tools.
+
+## Your Tools
+
+You have access to file operations within your workspace. Use them to:
+- Read and update your configuration files
+- Store persistent data
+- Organize your work
+
+This file is located at ~/workspace/AGENTS.md.
+`
+            },
+            {
+                name: 'TOOLS.md',
+                content: `# TOOLS.md - Technical Notes
+
+## Available Tools
+
+- \`read_file\`: Read files from your workspace
+- \`write_file\`: Write files to your workspace
+- \`run_shell_command\`: Execute shell commands (if permitted)
+- \`delegate_task\`: Delegate tasks to other agents
+- And more...
+
+## Important Paths
+
+- Configuration files: ~/workspace/*.md
+- Memory journals: ~/memory/journal_YYYY-MM-DD.md
+- Workspace root: ~/workspace/
+
+This file is located at ~/workspace/TOOLS.md.
+`
+            },
+            {
+                name: 'USER.md',
+                content: `# USER.md - User Context
+
+## User Profile
+
+_Add information about your user here._
+
+- Name: [To be filled]
+- Preferences: [To be filled]
+- Context: [To be filled]
+
+This file is located at ~/workspace/USER.md and should be updated as you learn more about your user.
+`
+            },
+            {
+                name: 'MEMORY.md',
+                content: `# MEMORY.md - Long-term Memory
+
+## Important Facts
+
+_Distill important information here during heartbeats._
+
+This file is located at ~/workspace/MEMORY.md and is automatically updated during heartbeat cycles.
+`
+            },
+            {
+                name: 'HEARTBEAT.md',
+                content: `# HEARTBEAT.md - Heartbeat Instructions
+
+## What to do during heartbeat
+
+1. Review recent journals in ~/memory/
+2. Distill important facts into MEMORY.md
+3. Check for maintenance tasks
+4. Reply "HEARTBEAT_OK" if nothing to report
+
+This file is located at ~/workspace/HEARTBEAT.md.
+`
             }
         ];
 
+        const agentName = path.basename(baseDir);
         for (const file of defaultFiles) {
-            const filePath = path.join(baseDir, file.name);
+            const filePath = path.join(workspaceDir, file.name);
             if (!fs.existsSync(filePath)) {
                 // Replace placeholders
-                const content = file.content.replace(/\${agentName}/g, path.basename(baseDir));
+                const content = file.content.replace(/\${agentName}/g, agentName);
                 fs.writeFileSync(filePath, content);
             }
         }

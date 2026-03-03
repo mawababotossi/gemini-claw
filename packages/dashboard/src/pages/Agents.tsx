@@ -109,7 +109,7 @@ const ACP_PROVIDERS = [
 // ─── Tab: Overview ──────────────────────────────────────────────────────────
 
 function OverviewTab({
-    formData, setFormData, models, providers, isCreating, onSave
+    formData, setFormData, models, providers, isCreating, onSave, onTriggerHeartbeat, isTriggeringHeartbeat
 }: {
     formData: AgentConfig;
     setFormData: (d: AgentConfig) => void;
@@ -117,6 +117,8 @@ function OverviewTab({
     providers: ProviderMetadata[];
     isCreating: boolean;
     onSave: (e: React.FormEvent) => void;
+    onTriggerHeartbeat: () => void;
+    isTriggeringHeartbeat: boolean;
 }) {
     const acpProvider = ACP_PROVIDERS.find(p => p.id === (formData.provider || 'gemini')) ?? ACP_PROVIDERS[0];
     // Filter models from API providers matching the selected ACP provider type
@@ -268,13 +270,27 @@ function OverviewTab({
                     </div>
                 </FormField>
                 <FormField label="Cron Expression" hint="e.g. 0 8,20 * * *">
-                    <input
-                        className="form-input"
-                        value={formData.heartbeat?.cron ?? ''}
-                        onChange={e => setFormData({ ...formData, heartbeat: { ...(formData.heartbeat ?? {}), enabled: formData.heartbeat?.enabled ?? false, cron: e.target.value } })}
-                        placeholder="0 8,20 * * * (UTC)"
-                        disabled={!formData.heartbeat?.enabled}
-                    />
+                    <div className="flex gap-2">
+                        <input
+                            className="form-input"
+                            value={formData.heartbeat?.cron ?? ''}
+                            onChange={e => setFormData({ ...formData, heartbeat: { ...(formData.heartbeat ?? {}), enabled: formData.heartbeat?.enabled ?? false, cron: e.target.value } })}
+                            placeholder="0 8,20 * * * (UTC)"
+                            disabled={!formData.heartbeat?.enabled}
+                        />
+                        {!isCreating && (
+                            <button
+                                type="button"
+                                className="btn btn-sm btn-outline gap-2"
+                                onClick={onTriggerHeartbeat}
+                                disabled={isTriggeringHeartbeat || !formData.heartbeat?.enabled}
+                                title="Trigger Heartbeat Now"
+                            >
+                                {isTriggeringHeartbeat ? <Loader2 size={13} className="animate-spin" /> : <Zap size={13} />}
+                                <span className="hide-mobile">Run Now</span>
+                            </button>
+                        )}
+                    </div>
                 </FormField>
             </div>
 
@@ -854,6 +870,7 @@ export function Agents() {
     const [agentMemory, setAgentMemory] = useState<any[]>([]);
     const [agentSessions, setAgentSessions] = useState<any[]>([]);
     const [isCreating, setIsCreating] = useState(false);
+    const [isTriggeringHeartbeat, setIsTriggeringHeartbeat] = useState(false);
     const { providers } = useProviders();
     const detailsRef = useRef<HTMLDivElement>(null);
 
@@ -934,6 +951,26 @@ export function Agents() {
             skills: [],
             authType: defaultAuth
         });
+    };
+
+    const handleTriggerHeartbeat = async () => {
+        if (!selectedAgentName || isTriggeringHeartbeat) return;
+        setIsTriggeringHeartbeat(true);
+        try {
+            const result = await api.triggerAgentHeartbeat(selectedAgentName);
+            if (result.success) {
+                // We could show a toast here if we had a toast system
+                console.log('Heartbeat triggered successfully:', result.message);
+                alert(result.message); // Simple alert for now as fallback
+            } else {
+                alert(`Heartbeat failed: ${result.message}`);
+            }
+        } catch (err: any) {
+            console.error('Failed to trigger heartbeat', err);
+            alert(`Error triggering heartbeat: ${err.message}`);
+        } finally {
+            setIsTriggeringHeartbeat(false);
+        }
     };
 
     const handleSave = async (e: React.FormEvent) => {
@@ -1140,6 +1177,8 @@ export function Agents() {
                                         providers={providers}
                                         isCreating={isCreating}
                                         onSave={handleSave}
+                                        onTriggerHeartbeat={handleTriggerHeartbeat}
+                                        isTriggeringHeartbeat={isTriggeringHeartbeat}
                                     />
                                 )}
                                 {activeTab === 'files' && (
