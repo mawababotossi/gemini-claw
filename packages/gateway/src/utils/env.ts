@@ -35,7 +35,12 @@ export function loadEnv(): string {
     }
 
     if (envPath) {
-        dotenv.config({ path: envPath });
+        const result = dotenv.config({ path: envPath });
+        if (result.error) {
+            console.error(`[env] Error loading ${envPath}: ${result.error.message}`);
+        } else {
+            console.log(`[env] Successfully loaded ${envPath}`);
+        }
     } else {
         dotenv.config();
     }
