@@ -34,10 +34,8 @@ pnpm build
 CLI_BIN="$INSTALL_DIR/packages/cli/dist/index.js"
 chmod +x "$CLI_BIN"
 
-if [ ! -f "$BIN_PATH" ]; then
-  echo "🔗 Creating symlink in $BIN_PATH (requires sudo)..."
-  sudo ln -sf "$CLI_BIN" "$BIN_PATH"
-fi
+echo "🔗 Creating symlink in $BIN_PATH (requires sudo)..."
+sudo ln -sf "$CLI_BIN" "$BIN_PATH"
 
 echo ""
 echo "✅ ClawGate installed successfully!"
