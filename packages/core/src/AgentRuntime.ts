@@ -249,7 +249,10 @@ CRITICAL: You are an autonomous agent running within the ClawGate platform.
     async processMessage(
         msg: InboundMessage,
         peerAgents?: { name: string; model: string }[],
-        options?: { onChunk?: (text: string) => Promise<void> }
+        options?: {
+            onChunk?: (text: string) => Promise<void>;
+            silentBuffer?: boolean;
+        }
     ): Promise<AgentResponse> {
         await this.checkHealth(msg.sessionId);
         const bridge = await this.getBridge(msg.sessionId);
@@ -282,7 +285,7 @@ CRITICAL: You are an autonomous agent running within the ClawGate platform.
 
         // Buffer pour le streaming
         const streamingBuffer = options?.onChunk
-            ? new StreamingBuffer(options.onChunk, 300)
+            ? new StreamingBuffer(options.onChunk, 300, options.silentBuffer ?? false)
             : null;
 
         try {

@@ -14,7 +14,10 @@ type Rejecter = (reason: unknown) => void;
 interface QueueItem {
     msg: InboundMessage;
     peerAgents?: { name: string; model: string }[];
-    options?: { onChunk?: (text: string) => Promise<void> };
+    options?: {
+        onChunk?: (text: string) => Promise<void>;
+        silentBuffer?: boolean;
+    };
     resolve: Resolver;
     reject: Rejecter;
 }
@@ -29,7 +32,10 @@ export class MessageQueue {
         msg: InboundMessage,
         runtime: AgentRuntime,
         peerAgents?: { name: string; model: string }[],
-        options?: { onChunk?: (text: string) => Promise<void> }
+        options?: {
+            onChunk?: (text: string) => Promise<void>;
+            silentBuffer?: boolean;
+        }
     ): Promise<AgentResponse> {
         return new Promise<AgentResponse>((resolve, reject) => {
             const sessionId = msg.sessionId;

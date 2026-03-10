@@ -116,7 +116,11 @@
             "allowedPermissions": [
                 "getCurrentTime",
                 "google_web_search",
-                "shell"
+                "shell",
+                "read_file",
+                "write_file",
+                "read_host_file",
+                "write_host_file"
             ],
             "status": "Healthy",
             "baseDir": "/media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/clawGate/data/agents/scipro"
@@ -138,7 +142,11 @@
             "allowedPermissions": [
                 "getCurrentTime",
                 "google_web_search",
-                "shell"
+                "shell",
+                "read_file",
+                "write_file",
+                "read_host_file",
+                "write_host_file"
             ],
             "status": "Healthy",
             "baseDir": "/media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/clawGate/data/agents/viral-writer"
@@ -161,7 +169,11 @@
             "allowedPermissions": [
                 "getCurrentTime",
                 "google_web_search",
-                "shell"
+                "shell",
+                "read_file",
+                "write_file",
+                "read_host_file",
+                "write_host_file"
             ],
             "status": "Healthy",
             "baseDir": "/media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/clawGate/data/agents/businessman"
@@ -184,7 +196,11 @@
             "allowedPermissions": [
                 "getCurrentTime",
                 "google_web_search",
-                "shell"
+                "shell",
+                "read_file",
+                "write_file",
+                "read_host_file",
+                "write_host_file"
             ],
             "status": "Healthy",
             "baseDir": "/media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/clawGate/data/agents/sylvie"
@@ -207,7 +223,11 @@
             "allowedPermissions": [
                 "getCurrentTime",
                 "google_web_search",
-                "shell"
+                "shell",
+                "read_file",
+                "write_file",
+                "read_host_file",
+                "write_host_file"
             ],
             "status": "Healthy",
             "baseDir": "/media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/clawGate/data/agents/warren"

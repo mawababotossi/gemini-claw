@@ -95,17 +95,25 @@ export class WhatsAppAdapter {
                     console.log(`[whatsapp-debug] Sending message to ${realJid} (from peerId ${peerId}): ${text.slice(0, 50)}...`);
                     // Add a zero-width space to identify bot-generated messages
                     const botReplyText = text + '\u200B';
-                    const sentMsg = await this.sock.sendMessage(realJid, { text: botReplyText });
-                    // Store the sent message for retry/decryption handling
-                    if (sentMsg?.key?.id && sentMsg?.message) {
-                        this.messageStore.set(sentMsg.key.id, sentMsg.message);
-                        // Limit store size
-                        if (this.messageStore.size > 500) {
-                            const firstKey = this.messageStore.keys().next().value;
-                            if (firstKey) this.messageStore.delete(firstKey);
+
+                    // Découper intelligemment si le message est trop long
+                    const parts = this.splitMessage(botReplyText);
+
+                    for (const part of parts) {
+                        const sentMsg = await this.sock.sendMessage(realJid, { text: part });
+                        // Store the sent message for retry/decryption handling
+                        if (sentMsg?.key?.id && sentMsg?.message) {
+                            this.messageStore.set(sentMsg.key.id, sentMsg.message);
+                            // Limit store size
+                            if (this.messageStore.size > 500) {
+                                const firstKey = this.messageStore.keys().next().value;
+                                if (firstKey) this.messageStore.delete(firstKey);
+                            }
                         }
+                        // Petite pause entre les parties pour respecter le rate limit WhatsApp
+                        if (parts.length > 1) await new Promise(r => setTimeout(r, 500));
                     }
-                    console.log(`[whatsapp-debug] Message sent successful.`);
+                    console.log(`[whatsapp-debug] Message(s) sent successful.`);
                 } catch (err) {
                     console.error('[whatsapp] Send failed:', err);
                 }
@@ -333,5 +341,55 @@ export class WhatsAppAdapter {
                 } catch { /* ignore */ }
             }
         });
+    }
+
+    private splitMessage(text: string, maxLen = 4000): string[] {
+        if (text.length <= maxLen) return [text];
+
+        const chunks: string[] = [];
+        let remaining = text;
+
+        while (remaining.length > maxLen) {
+            // Cherche la dernière coupure propre dans la limite
+            let cutAt = maxLen;
+
+            // Priorité 1 : couper après un double saut de ligne (entre paragraphes)
+            const lastParagraph = remaining.lastIndexOf('\n\n', maxLen);
+            if (lastParagraph > maxLen * 0.5) {
+                cutAt = lastParagraph + 2;
+            }
+            // Priorité 2 : couper après un saut de ligne simple
+            else {
+                const lastNewline = remaining.lastIndexOf('\n', maxLen);
+                if (lastNewline > maxLen * 0.5) {
+                    cutAt = lastNewline + 1;
+                }
+                // Priorité 3 : couper après une phrase (. ! ?)
+                else {
+                    const lastSentence = Math.max(
+                        remaining.lastIndexOf('. ', maxLen),
+                        remaining.lastIndexOf('! ', maxLen),
+                        remaining.lastIndexOf('? ', maxLen)
+                    );
+                    if (lastSentence > maxLen * 0.5) {
+                        cutAt = lastSentence + 2;
+                    }
+                    // Dernier recours : couper après un espace
+                    else {
+                        const lastSpace = remaining.lastIndexOf(' ', maxLen);
+                        if (lastSpace > 0) cutAt = lastSpace + 1;
+                    }
+                }
+            }
+
+            chunks.push(remaining.slice(0, cutAt).trimEnd());
+            remaining = remaining.slice(cutAt).trimStart();
+        }
+
+        if (remaining.length > 0) {
+            chunks.push(remaining);
+        }
+
+        return chunks;
     }
 }

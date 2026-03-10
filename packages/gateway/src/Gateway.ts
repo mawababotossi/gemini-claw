@@ -599,9 +599,50 @@ export class Gateway implements IGateway {
             kind: 'native'
         };
 
+        const writeHostFileSkill: Skill = {
+            name: 'write_host_file',
+            description: 'Write to any file on the host system, following symbolic links. Use this ONLY when write_file fails due to workspace restrictions (e.g., when writing to a shared chat.md symlink).',
+            parameters: {
+                type: Type.OBJECT,
+                properties: {
+                    path: {
+                        type: Type.STRING,
+                        description: 'The absolute path to the file to write.'
+                    },
+                    content: {
+                        type: Type.STRING,
+                        description: 'The content to write to the file.'
+                    },
+                    mode: {
+                        type: Type.STRING,
+                        description: '"overwrite" (default) or "append".',
+                        enum: ['overwrite', 'append']
+                    }
+                },
+                required: ['path', 'content']
+            },
+            execute: async (args) => {
+                const filePath = args.path as string;
+                const content = args.content as string;
+                const mode = (args.mode as string) || 'overwrite';
+                try {
+                    if (mode === 'append') {
+                        fs.appendFileSync(filePath, content, 'utf8');
+                    } else {
+                        fs.writeFileSync(filePath, content, 'utf8');
+                    }
+                    return { success: true, path: filePath };
+                } catch (err: any) {
+                    throw new Error(`Failed to write file: ${err.message}`);
+                }
+            },
+            kind: 'native'
+        };
+
         this.skillRegistry.register(readMemoryFileSkill);
         this.skillRegistry.register(updateMemoryFileSkill);
         this.skillRegistry.register(readHostFileSkill);
+        this.skillRegistry.register(writeHostFileSkill);
         this.skillRegistry.register(delegateTaskSkill);
         this.skillRegistry.register(scheduleTaskSkill);
         this.skillRegistry.register(listTasksSkill);
@@ -684,21 +725,32 @@ export class Gateway implements IGateway {
         // Dispatch through per-session queue (FIFO)
         let response: AgentResponse;
         try {
-            const sendFn = async (text: string) => {
-                await this.send(channel, peerId, text);
+            const isWhatsApp = channel === 'whatsapp';
+            const isWhatsAppMirror = channel === 'webchat' && this.waConnected && isOwner;
+            const skipStreamingForThisChannel = isWhatsApp || isWhatsAppMirror;
 
-                // Mirroring if owner
-                if (this.isOwner(channel, peerId, metadata)) {
-                    if (channel === 'whatsapp') {
-                        await this.broadcastToWebChat({ type: 'message', from: 'assistant', text });
-                    } else if (channel === 'webchat' && this.waConnected) {
-                        const ownerJid = this.getOwnerJid();
-                        if (ownerJid) await this.send('whatsapp', ownerJid, text).catch(() => { });
+            let streamChunkFn: ((text: string) => Promise<void>) | undefined;
+
+            if (!skipStreamingForThisChannel) {
+                streamChunkFn = async (text: string) => {
+                    await this.send(channel, peerId, text);
+
+                    // Mirroring if owner
+                    if (isOwner) {
+                        if (channel === 'whatsapp') {
+                            await this.broadcastToWebChat({ type: 'message', from: 'assistant', text });
+                        } else if (channel === 'webchat' && this.waConnected) {
+                            const ownerJid = this.getOwnerJid();
+                            if (ownerJid) await this.send('whatsapp', ownerJid, text).catch(() => { });
+                        }
                     }
-                }
-            };
+                };
+            }
 
-            response = await this.queue.enqueue(msg, runtime, peerAgents, { onChunk: sendFn });
+            response = await this.queue.enqueue(msg, runtime, peerAgents, {
+                onChunk: streamChunkFn,
+                silentBuffer: skipStreamingForThisChannel
+            } as any);
         } catch (err) {
             console.error(`[gateway] Runtime error for session ${session.id}:`, err);
             await this.send(channel, peerId, '⚠️ An error occurred. Please try again.');

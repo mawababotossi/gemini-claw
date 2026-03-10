@@ -14,7 +14,8 @@ export class StreamingBuffer {
 
     constructor(
         private readonly sendFn: SendFn,
-        private readonly flushDelayMs = 300
+        private readonly flushDelayMs = 300,
+        private readonly silent = false
     ) { }
 
     /**
@@ -22,6 +23,7 @@ export class StreamingBuffer {
      */
     append(text: string): void {
         this.buffer += text;
+        if (this.silent) return;
         if (this.timer) clearTimeout(this.timer);
         this.timer = setTimeout(() => this.flush(), this.flushDelayMs);
     }
