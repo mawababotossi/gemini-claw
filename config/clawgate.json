@@ -142,6 +142,75 @@
             ],
             "status": "Healthy",
             "baseDir": "/media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/clawGate/data/agents/viral-writer"
+        },
+        {
+            "name": "businessman",
+            "model": "gemini-3-flash-preview",
+            "heartbeat": {
+                "enabled": true,
+                "intervalMinutes": 120
+            },
+            "mcpServers": [
+                {
+                    "name": "clawgate-skills",
+                    "type": "sse",
+                    "url": "http://localhost:3002/api/mcp/messages",
+                    "headers": []
+                }
+            ],
+            "allowedPermissions": [
+                "getCurrentTime",
+                "google_web_search",
+                "shell"
+            ],
+            "status": "Healthy",
+            "baseDir": "/media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/clawGate/data/agents/businessman"
+        },
+        {
+            "name": "sylvie",
+            "model": "gemini-3-flash-preview",
+            "heartbeat": {
+                "enabled": true,
+                "intervalMinutes": 120
+            },
+            "mcpServers": [
+                {
+                    "name": "clawgate-skills",
+                    "type": "sse",
+                    "url": "http://localhost:3002/api/mcp/messages",
+                    "headers": []
+                }
+            ],
+            "allowedPermissions": [
+                "getCurrentTime",
+                "google_web_search",
+                "shell"
+            ],
+            "status": "Healthy",
+            "baseDir": "/media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/clawGate/data/agents/sylvie"
+        },
+        {
+            "name": "warren",
+            "model": "gemini-3-flash-preview",
+            "heartbeat": {
+                "enabled": true,
+                "intervalMinutes": 120
+            },
+            "mcpServers": [
+                {
+                    "name": "clawgate-skills",
+                    "type": "sse",
+                    "url": "http://localhost:3002/api/mcp/messages",
+                    "headers": []
+                }
+            ],
+            "allowedPermissions": [
+                "getCurrentTime",
+                "google_web_search",
+                "shell"
+            ],
+            "status": "Healthy",
+            "baseDir": "/media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/clawGate/data/agents/warren"
         }
     ],
     "channels": {
