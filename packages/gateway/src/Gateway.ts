@@ -757,6 +757,11 @@ export class Gateway implements IGateway {
             return;
         }
 
+        // Final response (if not streamed)
+        if (!response.streamed) {
+            await this.send(channel, peerId, response.text, response.thought);
+        }
+
         // Finalize mirrored thought for owners if streamed
         if (response.streamed && response.thought && this.isOwner(channel, peerId, metadata)) {
             if (channel === 'whatsapp') {
