@@ -83,7 +83,9 @@
                 "read_skill",
                 "read_host_file",
                 "run_code",
-                "getCurrentTime"
+                "getCurrentTime",
+                "write_host_file",
+                "readMemoryFile"
             ],
             "status": "Healthy",
             "skills": [
@@ -173,7 +175,18 @@
                 "read_file",
                 "write_file",
                 "read_host_file",
-                "write_host_file"
+                "write_host_file",
+                "run_shell_command",
+                "network",
+                "readMemoryFile",
+                "updateMemoryFile",
+                "delegate_task",
+                "schedule_task",
+                "list_tasks",
+                "remove_task",
+                "list_agents",
+                "run_code",
+                "read_skill"
             ],
             "status": "Healthy",
             "baseDir": "/media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/clawGate/data/agents/businessman"
@@ -200,7 +213,18 @@
                 "read_file",
                 "write_file",
                 "read_host_file",
-                "write_host_file"
+                "write_host_file",
+                "run_shell_command",
+                "network",
+                "readMemoryFile",
+                "updateMemoryFile",
+                "delegate_task",
+                "schedule_task",
+                "list_tasks",
+                "remove_task",
+                "list_agents",
+                "run_code",
+                "read_skill"
             ],
             "status": "Healthy",
             "baseDir": "/media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/clawGate/data/agents/sylvie"
@@ -227,7 +251,13 @@
                 "read_file",
                 "write_file",
                 "read_host_file",
-                "write_host_file"
+                "write_host_file",
+                "readMemoryFile",
+                "updateMemoryFile",
+                "delegate_task",
+                "schedule_task",
+                "run_shell_command",
+                "network"
             ],
             "status": "Healthy",
             "baseDir": "/media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/clawGate/data/agents/warren"
