@@ -27,7 +27,9 @@ export class AgentRuntime extends EventEmitter {
     private nextJobId = 1;
     private sessionTypingThrottle: Map<string, number> = new Map();
     private bridgeLastUsed: Map<string, number> = new Map();
-    private readonly BRIDGE_IDLE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+    private get BRIDGE_IDLE_TTL_MS(): number {
+        return this.config.performance?.bridgeIdleTtlMs ?? 30 * 60 * 1000;
+    }
     private readonly TYPING_THROTTLE_MS = 3000; // Reduced to 3s for WhatsApp/WebChat visibility
     private gcInterval?: any;
     private _status: NonNullable<AgentConfig['status']> = 'Healthy';
@@ -83,6 +85,22 @@ export class AgentRuntime extends EventEmitter {
     private async getBridge(userSessionId: string): Promise<ACPBridge> {
         let bridge = this.bridges.get(userSessionId);
         if (!bridge) {
+            // Evict oldest bridge if limit reached
+            const maxBridges = this.config.performance?.maxConcurrentBridges;
+            if (maxBridges && maxBridges > 0 && this.bridges.size >= maxBridges) {
+                const oldest = [...this.bridgeLastUsed.entries()]
+                    .sort((a, b) => a[1] - b[1])[0];
+                if (oldest) {
+                    const [sid] = oldest;
+                    console.log(`[core/runtime] Agent "${this.config.name}" bridge limit reached (${maxBridges}), evicting oldest: ${sid}`);
+                    this.bridges.get(sid)?.stop();
+                    this.bridges.delete(sid);
+                    this.sessionMap.delete(sid);
+                    this.bridgeLastUsed.delete(sid);
+                    this.sessionTypingThrottle.delete(sid);
+                }
+            }
+
             bridge = new ACPBridge(
                 this.config.model,
                 this.config.allowedPermissions ?? [],
@@ -1065,6 +1083,7 @@ ${systemPrompt}
     }
 
     private startBridgeGC() {
+        const interval = 30000; // 30 seconds
         this.gcInterval = setInterval(async () => {
             const now = Date.now();
             for (const [sid, lastUsed] of this.bridgeLastUsed.entries()) {
@@ -1073,7 +1092,7 @@ ${systemPrompt}
 
                 // 1. Idle cleanup
                 if (now - lastUsed > this.BRIDGE_IDLE_TTL_MS) {
-                    console.log(`[core/runtime] Cleaning up idle bridge for session: ${sid}`);
+                    console.log(`[core/runtime] Agent "${this.config.name}" cleaning up idle bridge for session: ${sid}`);
                     bridge.stop();
                     this.bridges.delete(sid);
                     this.sessionMap.delete(sid);
@@ -1084,7 +1103,7 @@ ${systemPrompt}
                 else if (now - lastUsed < 60000) {
                     const alive = await bridge.ping(2000);
                     if (!alive) {
-                        console.warn(`[core/runtime] Active bridge for ${sid} is unresponsive. Killing it.`);
+                        console.warn(`[core/runtime] Agent "${this.config.name}" active bridge for ${sid} is unresponsive. Killing it.`);
                         bridge.stop();
                         this.bridges.delete(sid);
                         this.sessionMap.delete(sid);
@@ -1093,7 +1112,7 @@ ${systemPrompt}
                     }
                 }
             }
-        }, 60000); // Once per minute
+        }, interval);
     }
 
     public removeDynamicJob(id: string): boolean {

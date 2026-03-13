@@ -103,8 +103,9 @@
             "provider": "gemini",
             "authType": "oauth-personal",
             "heartbeatRunning": false,
-            "lastHeartbeatAt": 1773162237374,
-            "lastHeartbeatResult": "proactive"
+            "performance": {
+                "maxConcurrentBridges": 1
+            }
         },
         {
             "name": "scipro",
@@ -198,9 +199,10 @@
                 "list_channels",
                 "post_message"
             ],
-            "status": "Healthy",
+            "status": "Unresponsive",
             "baseDir": "/media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/clawGate/data/agents/businessman",
-            "heartbeatRunning": false
+            "heartbeatRunning": false,
+            "lastHeartbeatResult": "failed"
         },
         {
             "name": "sylvie",
@@ -279,7 +281,9 @@
             ],
             "status": "Healthy",
             "baseDir": "/media/tym/54971b6d-8afb-491d-832c-93faca387626/tym/Lab/clawGate/data/agents/warren",
-            "heartbeatRunning": false
+            "heartbeatRunning": false,
+            "lastHeartbeatAt": 1773312779026,
+            "lastHeartbeatResult": "proactive"
         }
     ],
     "channels": {

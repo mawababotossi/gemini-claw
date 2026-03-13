@@ -43,6 +43,13 @@ export interface AgentConfig {
     allowedPermissions?: string[];
     /** List of enabled prompt-driven skills (OpenClaw) */
     skills?: string[];
+    /** Performance and resource limits */
+    performance?: {
+        /** Time in ms before an idle bridge is killed (default: 30m) */
+        bridgeIdleTtlMs?: number;
+        /** Max concurrent bridges for this agent (default: no limit) */
+        maxConcurrentBridges?: number;
+    };
 }
 
 export interface ProviderConfig {
@@ -59,6 +66,16 @@ export interface ProjectConfig {
     name: string;
     description?: string;
     defaultModel?: string;
+    performance?: {
+        /** Global bridge idle TTL in ms */
+        bridgeIdleTtlMs?: number;
+        /** Global max concurrent bridges per agent */
+        maxConcurrentBridges?: number;
+        /** Max message queue size per session */
+        maxMessageQueueSize?: number;
+        /** Bridge GC interval in ms */
+        bridgeGcIntervalMs?: number;
+    };
 }
 
 export interface RuntimeConfig {

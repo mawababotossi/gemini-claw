@@ -118,7 +118,7 @@ export class Gateway implements IGateway {
             this.skillRegistry,
             config.dataDir
         );
-        this.queue = new MessageQueue();
+        this.queue = new MessageQueue(config.project?.performance?.maxMessageQueueSize ?? 50);
         this.channelConfigs = config.channels ?? {};
 
         // Bind proactive heartbeat events

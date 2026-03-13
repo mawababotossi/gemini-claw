@@ -379,15 +379,35 @@ export class ACPBridge {
 
         if (toolCall) {
             // Extract from toolCallId (e.g., "getCurrentTime-123") or title (JSON string or tool name)
-            const idMatch = toolCall.toolCallId?.split('-')[0];
-            if (idMatch) {
-                requestedAction = idMatch;
+            const toolCallId: string = toolCall.toolCallId ?? '';
+
+            if (toolCallId.startsWith('mcp_')) {
+                // Format: mcp_<serverName>_<toolName>-<timestamp>
+                const withoutTimestamp = toolCallId.replace(/-\d+$/, '');
+                const fullQualified = withoutTimestamp.substring(4); // Remove "mcp_"
+                const parts = fullQualified.split('_');
+
+                // Try suffixes from longest to shortest to find the first one in allowedPermissions.
+                // This handles server names and tool names both containing underscores.
+                for (let i = 0; i < parts.length; i++) {
+                    const candidate = parts.slice(i).join('_');
+                    if (this.allowedPermissions.some(perm => perm.toLowerCase() === candidate.toLowerCase())) {
+                        requestedAction = candidate;
+                        break;
+                    }
+                }
+
+                // Fallback to the last part if no match found (matches previous behavior but more restrictive)
+                if (requestedAction === 'unknown' && parts.length > 0) {
+                    requestedAction = parts[parts.length - 1];
+                }
+            } else if (toolCallId) {
+                // Native tools: "getCurrentTime-123" → "getCurrentTime"
+                requestedAction = toolCallId.split('-')[0];
             } else if (toolCall.title) {
                 try {
                     // Title for tools is often the JSON arguments, but might be tool name
-                    const parsed = JSON.parse(toolCall.title);
-                    // If it's an object, it's arguments, so we rely on ID. 
-                    // If parsing fails or it's just a string, it might be the name.
+                    JSON.parse(toolCall.title);
                 } catch {
                     requestedAction = toolCall.title;
                 }
@@ -399,7 +419,7 @@ export class ACPBridge {
         }
 
         const isAllowed = this.allowedPermissions.some(
-            (perm) => requestedAction.toLowerCase().includes(perm.toLowerCase())
+            (perm) => requestedAction.toLowerCase() === perm.toLowerCase()
         );
 
         if (isAllowed) {

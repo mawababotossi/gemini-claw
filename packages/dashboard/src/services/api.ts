@@ -39,6 +39,10 @@ export interface AgentConfig {
     skills?: string[];
     provider?: string;
     mcpServers?: { name: string; type: string; url?: string; headers?: any[] }[];
+    performance?: {
+        bridgeIdleTtlMs?: number;
+        maxConcurrentBridges?: number;
+    };
 }
 
 export interface AppStatus {
@@ -57,6 +61,12 @@ export interface ProjectConfig {
     name: string;
     description?: string;
     defaultModel?: string;
+    performance?: {
+        bridgeIdleTtlMs?: number;
+        maxConcurrentBridges?: number;
+        maxMessageQueueSize?: number;
+        bridgeGcIntervalMs?: number;
+    };
 }
 
 export interface ProviderConfig {

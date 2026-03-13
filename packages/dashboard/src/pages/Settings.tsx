@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Globe, Cpu, Database, Save, Plus, Trash2, Eye, EyeOff } from 'lucide-react';
+import { Globe, Cpu, Database, Save, Plus, Trash2, Eye, EyeOff, Zap } from 'lucide-react';
 import { api, type GlobalConfig, type ProviderConfig } from '../services/api';
 import './Settings.css';
 
@@ -142,6 +142,88 @@ export function Settings() {
                             {models.map((m: string) => <option key={m} value={m}>{m}</option>)}
                         </select>
                     </div>
+
+                    <div className="section-header" style={{ marginTop: '1.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '1rem' }}>
+                        <Zap size={20} />
+                        <h2>Global Performance</h2>
+                    </div>
+                    <div className="form-row split-form" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                        <div className="form-group">
+                            <label>Max Session Queue</label>
+                            <input
+                                type="number"
+                                value={config.project.performance?.maxMessageQueueSize ?? ''}
+                                onChange={e => {
+                                    const val = e.target.value ? parseInt(e.target.value) : undefined;
+                                    setConfig({
+                                        ...config,
+                                        project: {
+                                            ...config.project,
+                                            performance: { ...(config.project.performance ?? {}), maxMessageQueueSize: val }
+                                        }
+                                    });
+                                }}
+                                placeholder="50"
+                            />
+                        </div>
+                        <div className="form-group">
+                            <label>Bridge GC Interval (ms)</label>
+                            <input
+                                type="number"
+                                value={config.project.performance?.bridgeGcIntervalMs ?? ''}
+                                onChange={e => {
+                                    const val = e.target.value ? parseInt(e.target.value) : undefined;
+                                    setConfig({
+                                        ...config,
+                                        project: {
+                                            ...config.project,
+                                            performance: { ...(config.project.performance ?? {}), bridgeGcIntervalMs: val }
+                                        }
+                                    });
+                                }}
+                                placeholder="30000"
+                            />
+                        </div>
+                    </div>
+                    <div className="form-row split-form" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '1rem' }}>
+                        <div className="form-group">
+                            <label>Default Idle TTL (ms)</label>
+                            <input
+                                type="number"
+                                value={config.project.performance?.bridgeIdleTtlMs ?? ''}
+                                onChange={e => {
+                                    const val = e.target.value ? parseInt(e.target.value) : undefined;
+                                    setConfig({
+                                        ...config,
+                                        project: {
+                                            ...config.project,
+                                            performance: { ...(config.project.performance ?? {}), bridgeIdleTtlMs: val }
+                                        }
+                                    });
+                                }}
+                                placeholder="1800000"
+                            />
+                        </div>
+                        <div className="form-group">
+                            <label>Default Max Bridges</label>
+                            <input
+                                type="number"
+                                value={config.project.performance?.maxConcurrentBridges ?? ''}
+                                onChange={e => {
+                                    const val = e.target.value ? parseInt(e.target.value) : undefined;
+                                    setConfig({
+                                        ...config,
+                                        project: {
+                                            ...config.project,
+                                            performance: { ...(config.project.performance ?? {}), maxConcurrentBridges: val }
+                                        }
+                                    });
+                                }}
+                                placeholder="0"
+                            />
+                        </div>
+                    </div>
+
                     <div className="section-actions">
                         <button
                             className="btn btn-primary"

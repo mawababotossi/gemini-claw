@@ -527,21 +527,49 @@ async function main(): Promise<void> {
                 const wsFiles = fs.readdirSync(workspaceDir)
                     .filter(f => f.endsWith('.md'))
                     .map(f => {
-                        const stats = fs.statSync(path.join(workspaceDir, f));
-                        return { name: f, size: stats.size, mtime: stats.mtime, isWorkspace: true };
-                    });
+                        try {
+                            // Use lstatSync to avoid crashing on broken symlinks
+                            const stats = fs.lstatSync(path.join(workspaceDir, f));
+                            return { name: f, size: stats.size, mtime: stats.mtime, isWorkspace: true };
+                        } catch (e) {
+                            return null;
+                        }
+                    })
+                    .filter((f): f is any => f !== null);
                 allFiles.push(...wsFiles);
+
+                // 2. Files in workspace/memory (Journal, etc. - new location)
+                const workspaceMemoryDir = path.join(workspaceDir, 'memory');
+                if (fs.existsSync(workspaceMemoryDir)) {
+                    const memFiles = fs.readdirSync(workspaceMemoryDir)
+                        .filter(f => f.endsWith('.md'))
+                        .map(f => {
+                            try {
+                                const stats = fs.lstatSync(path.join(workspaceMemoryDir, f));
+                                return { name: f, size: stats.size, mtime: stats.mtime, isWorkspace: false };
+                            } catch (e) {
+                                return null;
+                            }
+                        })
+                        .filter((f): f is any => f !== null);
+                    allFiles.push(...memFiles);
+                }
             }
 
-            // 2. Files in memoryDir (Journal, etc.)
-            const memoryDir = path.join(baseDir, 'memory');
-            if (fs.existsSync(memoryDir)) {
-                const memFiles = fs.readdirSync(memoryDir)
+            // 3. Files in legacy memoryDir at baseDir root
+            const legacyMemoryDir = path.join(baseDir, 'memory');
+            if (fs.existsSync(legacyMemoryDir)) {
+                const memFiles = fs.readdirSync(legacyMemoryDir)
                     .filter(f => f.endsWith('.md'))
                     .map(f => {
-                        const stats = fs.statSync(path.join(memoryDir, f));
-                        return { name: f, size: stats.size, mtime: stats.mtime, isWorkspace: false };
-                    });
+                        try {
+                            const stats = fs.lstatSync(path.join(legacyMemoryDir, f));
+                            return { name: f, size: stats.size, mtime: stats.mtime, isWorkspace: false };
+                        } catch (e) {
+                            return null;
+                        }
+                    })
+                    .filter((f): f is any => f !== null);
                 allFiles.push(...memFiles);
             }
 
@@ -564,12 +592,13 @@ async function main(): Promise<void> {
             const baseDir = runtime.getConfig().baseDir;
             if (!baseDir) throw new Error('No base directory');
 
-            let filePath = path.join(baseDir, 'memory', req.params.filename);
+            let filePath = path.join(baseDir, 'workspace', req.params.filename);
             if (!fs.existsSync(filePath)) {
-                filePath = path.join(baseDir, 'workspace', req.params.filename);
+                filePath = path.join(baseDir, 'workspace', 'memory', req.params.filename);
             }
-
-            if (!fs.existsSync(filePath)) throw new Error('File not found');
+            if (!fs.existsSync(filePath)) {
+                filePath = path.join(baseDir, 'memory', req.params.filename);
+            }
 
             const content = fs.readFileSync(filePath, 'utf8');
             res.json({ content });
@@ -585,11 +614,13 @@ async function main(): Promise<void> {
             const baseDir = runtime.getConfig().baseDir;
             if (!baseDir) throw new Error('No base directory');
 
-            let filePath = path.join(baseDir, 'memory', req.params.filename);
+            let filePath = path.join(baseDir, 'workspace', req.params.filename);
             if (!fs.existsSync(filePath)) {
-                filePath = path.join(baseDir, 'workspace', req.params.filename);
+                filePath = path.join(baseDir, 'workspace', 'memory', req.params.filename);
             }
-
+            if (!fs.existsSync(filePath)) {
+                filePath = path.join(baseDir, 'memory', req.params.filename);
+            }
             if (!fs.existsSync(filePath)) throw new Error('File not found');
 
             if (typeof req.body.content !== 'string') throw new Error('Missing content body');

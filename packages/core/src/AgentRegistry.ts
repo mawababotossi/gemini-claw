@@ -64,13 +64,12 @@ export class AgentRegistry {
         const legacyFiles = ['chat.md'];
         for (const f of legacyFiles) {
             const legacyPath = path.join(workspaceDir, f);
-            if (fs.existsSync(legacyPath)) {
-                try {
-                    fs.unlinkSync(legacyPath);
-                    console.log(`[core/registry] Removed legacy file: ${legacyPath}`);
-                } catch (err) {
-                    // Ignore
-                }
+            try {
+                // Use rmSync with force: true to remove files or symlinks (even broken ones)
+                // without throwing if they don't exist.
+                fs.rmSync(legacyPath, { force: true });
+            } catch (err) {
+                // Ignore
             }
         }
 

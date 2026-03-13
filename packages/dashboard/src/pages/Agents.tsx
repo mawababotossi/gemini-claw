@@ -298,6 +298,41 @@ function OverviewTab({
                 </FormField>
             </div>
 
+            {/* Performance */}
+            <SectionTitle>Performance & Resource Limits</SectionTitle>
+            <div className="form-row split-form">
+                <FormField label="Bridge Idle TTL (ms)" hint="Killing idle CLI processes (default: 30m)">
+                    <input
+                        className="form-input"
+                        type="number"
+                        value={formData.performance?.bridgeIdleTtlMs ?? ''}
+                        onChange={e => setFormData({
+                            ...formData,
+                            performance: {
+                                ...(formData.performance ?? {}),
+                                bridgeIdleTtlMs: e.target.value ? parseInt(e.target.value) : undefined
+                            }
+                        })}
+                        placeholder="1800000"
+                    />
+                </FormField>
+                <FormField label="Max Concurrent Bridges" hint="Max CLI processes (0 = no limit)">
+                    <input
+                        className="form-input"
+                        type="number"
+                        value={formData.performance?.maxConcurrentBridges ?? ''}
+                        onChange={e => setFormData({
+                            ...formData,
+                            performance: {
+                                ...(formData.performance ?? {}),
+                                maxConcurrentBridges: e.target.value ? parseInt(e.target.value) : undefined
+                            }
+                        })}
+                        placeholder="0"
+                    />
+                </FormField>
+            </div>
+
             {/* Permissions */}
             <SectionTitle>Allowed Permissions</SectionTitle>
             {granted.length === 0 && (
